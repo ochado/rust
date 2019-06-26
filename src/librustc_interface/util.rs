@@ -35,8 +35,9 @@ use syntax::mut_visit::{*, MutVisitor, visit_clobber};
 use syntax::ast::BlockCheckMode;
 use syntax::util::lev_distance::find_best_match_for_name;
 use syntax::source_map::{FileLoader, RealFileLoader, SourceMap};
-use syntax::symbol::Symbol;
+use syntax::symbol::{Symbol, sym};
 use syntax::{self, ast, attr};
+use syntax_pos::edition::Edition;
 #[cfg(not(parallel_compiler))]
 use std::{thread, panic};
 
@@ -67,7 +68,7 @@ pub fn add_configuration(
     sess: &Session,
     codegen_backend: &dyn CodegenBackend,
 ) {
-    let tf = Symbol::intern("target_feature");
+    let tf = sym::target_feature;
 
     cfg.extend(
         codegen_backend
@@ -120,9 +121,13 @@ pub fn create_session(
 }
 
 // Temporarily have stack size set to 32MB to deal with various crates with long method
-// chains or deep syntax trees.
+// chains or deep syntax trees, except when on Haiku.
 // FIXME(oli-obk): get https://github.com/rust-lang/rust/pull/55617 the finish line
-const STACK_SIZE: usize = 32 * 1024 * 1024; // 32MB
+#[cfg(not(target_os = "haiku"))]
+const STACK_SIZE: usize = 32 * 1024 * 1024;
+
+#[cfg(target_os = "haiku")]
+const STACK_SIZE: usize = 16 * 1024 * 1024;
 
 fn get_stack_size() -> Option<usize> {
     // FIXME: Hacks on hacks. If the env is trying to override the stack size
@@ -167,6 +172,7 @@ pub fn scoped_thread<F: FnOnce() -> R + Send, R: Send>(cfg: thread::Builder, f: 
 
 #[cfg(not(parallel_compiler))]
 pub fn spawn_thread_pool<F: FnOnce() -> R + Send, R: Send>(
+    edition: Edition,
     _threads: Option<usize>,
     stderr: &Option<Arc<Mutex<Vec<u8>>>>,
     f: F,
@@ -178,7 +184,7 @@ pub fn spawn_thread_pool<F: FnOnce() -> R + Send, R: Send>(
     }
 
     scoped_thread(cfg, || {
-        syntax::with_globals( || {
+        syntax::with_globals(edition, || {
             ty::tls::GCX_PTR.set(&Lock::new(0), || {
                 if let Some(stderr) = stderr {
                     io::set_panic(Some(box Sink(stderr.clone())));
@@ -191,6 +197,7 @@ pub fn spawn_thread_pool<F: FnOnce() -> R + Send, R: Send>(
 
 #[cfg(parallel_compiler)]
 pub fn spawn_thread_pool<F: FnOnce() -> R + Send, R: Send>(
+    edition: Edition,
     threads: Option<usize>,
     stderr: &Option<Arc<Mutex<Vec<u8>>>>,
     f: F,
@@ -213,7 +220,7 @@ pub fn spawn_thread_pool<F: FnOnce() -> R + Send, R: Send>(
 
     let with_pool = move |pool: &ThreadPool| pool.install(move || f());
 
-    syntax::with_globals(|| {
+    syntax::with_globals(edition, || {
         syntax::GLOBALS.with(|syntax_globals| {
             syntax_pos::GLOBALS.with(|syntax_pos_globals| {
                 // The main handler runs for each Rayon worker thread and sets up
@@ -495,24 +502,24 @@ pub fn collect_crate_types(session: &Session, attrs: &[ast::Attribute]) -> Vec<c
     let attr_types: Vec<config::CrateType> = attrs
         .iter()
         .filter_map(|a| {
-            if a.check_name("crate_type") {
+            if a.check_name(sym::crate_type) {
                 match a.value_str() {
-                    Some(ref n) if *n == "rlib" => Some(config::CrateType::Rlib),
-                    Some(ref n) if *n == "dylib" => Some(config::CrateType::Dylib),
-                    Some(ref n) if *n == "cdylib" => Some(config::CrateType::Cdylib),
-                    Some(ref n) if *n == "lib" => Some(config::default_lib_output()),
-                    Some(ref n) if *n == "staticlib" => Some(config::CrateType::Staticlib),
-                    Some(ref n) if *n == "proc-macro" => Some(config::CrateType::ProcMacro),
-                    Some(ref n) if *n == "bin" => Some(config::CrateType::Executable),
-                    Some(ref n) => {
+                    Some(sym::rlib) => Some(config::CrateType::Rlib),
+                    Some(sym::dylib) => Some(config::CrateType::Dylib),
+                    Some(sym::cdylib) => Some(config::CrateType::Cdylib),
+                    Some(sym::lib) => Some(config::default_lib_output()),
+                    Some(sym::staticlib) => Some(config::CrateType::Staticlib),
+                    Some(sym::proc_dash_macro) => Some(config::CrateType::ProcMacro),
+                    Some(sym::bin) => Some(config::CrateType::Executable),
+                    Some(n) => {
                         let crate_types = vec![
-                            Symbol::intern("rlib"),
-                            Symbol::intern("dylib"),
-                            Symbol::intern("cdylib"),
-                            Symbol::intern("lib"),
-                            Symbol::intern("staticlib"),
-                            Symbol::intern("proc-macro"),
-                            Symbol::intern("bin")
+                            sym::rlib,
+                            sym::dylib,
+                            sym::cdylib,
+                            sym::lib,
+                            sym::staticlib,
+                            sym::proc_dash_macro,
+                            sym::bin
                         ];
 
                         if let ast::MetaItemKind::NameValue(spanned) = a.meta().unwrap().node {
@@ -714,7 +721,13 @@ impl<'a> ReplaceBodyWithLoop<'a> {
                                     _ => None,
                                 });
                                 any_involves_impl_trait(types.into_iter()) ||
-                                any_involves_impl_trait(data.bindings.iter().map(|b| &b.ty))
+                                data.constraints.iter().any(|c| {
+                                    match c.kind {
+                                        ast::AssocTyConstraintKind::Bound { .. } => true,
+                                        ast::AssocTyConstraintKind::Equality { ref ty } =>
+                                            involves_impl_trait(ty),
+                                    }
+                                })
                             },
                             Some(&ast::GenericArgs::Parenthesized(ref data)) => {
                                 any_involves_impl_trait(data.inputs.iter()) ||

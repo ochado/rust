@@ -21,7 +21,7 @@
 pub use self::Level::*;
 pub use self::LintSource::*;
 
-use rustc_data_structures::sync::{self, Lrc};
+use rustc_data_structures::sync;
 
 use crate::hir::def_id::{CrateNum, LOCAL_CRATE};
 use crate::hir::intravisit;
@@ -35,10 +35,10 @@ use crate::util::nodemap::NodeMap;
 use errors::{DiagnosticBuilder, DiagnosticId};
 use std::{hash, ptr};
 use syntax::ast;
-use syntax::source_map::{MultiSpan, ExpnFormat};
+use syntax::source_map::{MultiSpan, ExpnFormat, CompilerDesugaringKind};
 use syntax::early_buffered_lints::BufferedEarlyLintId;
 use syntax::edition::Edition;
-use syntax::symbol::Symbol;
+use syntax::symbol::{Symbol, sym};
 use syntax_pos::Span;
 
 pub use crate::lint::context::{LateContext, EarlyContext, LintContext, LintStore,
@@ -570,6 +570,17 @@ impl Level {
             _ => None,
         }
     }
+
+    /// Converts a symbol to a level.
+    pub fn from_symbol(x: Symbol) -> Option<Level> {
+        match x {
+            sym::allow => Some(Allow),
+            sym::warn => Some(Warn),
+            sym::deny => Some(Deny),
+            sym::forbid => Some(Forbid),
+            _ => None,
+        }
+    }
 }
 
 /// How a lint level was set.
@@ -750,14 +761,12 @@ pub fn struct_lint_level<'a>(sess: &'a Session,
     return err
 }
 
-pub fn maybe_lint_level_root(tcx: TyCtxt<'_, '_, '_>, id: hir::HirId) -> bool {
-    let attrs = tcx.hir().attrs_by_hir_id(id);
-    attrs.iter().any(|attr| Level::from_str(&attr.name_or_empty()).is_some())
+pub fn maybe_lint_level_root(tcx: TyCtxt<'_>, id: hir::HirId) -> bool {
+    let attrs = tcx.hir().attrs(id);
+    attrs.iter().any(|attr| Level::from_symbol(attr.name_or_empty()).is_some())
 }
 
-fn lint_levels<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, cnum: CrateNum)
-    -> Lrc<LintLevelMap>
-{
+fn lint_levels<'tcx>(tcx: TyCtxt<'tcx>, cnum: CrateNum) -> &'tcx LintLevelMap {
     assert_eq!(cnum, LOCAL_CRATE);
     let mut builder = LintLevelMapBuilder {
         levels: LintLevelSets::builder(tcx.sess),
@@ -767,18 +776,21 @@ fn lint_levels<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, cnum: CrateNum)
 
     let push = builder.levels.push(&krate.attrs);
     builder.levels.register_id(hir::CRATE_HIR_ID);
+    for macro_def in &krate.exported_macros {
+       builder.levels.register_id(macro_def.hir_id);
+    }
     intravisit::walk_crate(&mut builder, krate);
     builder.levels.pop(push);
 
-    Lrc::new(builder.levels.build_map())
+    tcx.arena.alloc(builder.levels.build_map())
 }
 
-struct LintLevelMapBuilder<'a, 'tcx: 'a> {
+struct LintLevelMapBuilder<'tcx> {
     levels: levels::LintLevelsBuilder<'tcx>,
-    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+    tcx: TyCtxt<'tcx>,
 }
 
-impl<'a, 'tcx> LintLevelMapBuilder<'a, 'tcx> {
+impl LintLevelMapBuilder<'tcx> {
     fn with_lint_attrs<F>(&mut self,
                           id: hir::HirId,
                           attrs: &[ast::Attribute],
@@ -794,7 +806,7 @@ impl<'a, 'tcx> LintLevelMapBuilder<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> intravisit::Visitor<'tcx> for LintLevelMapBuilder<'a, 'tcx> {
+impl intravisit::Visitor<'tcx> for LintLevelMapBuilder<'tcx> {
     fn nested_visit_map<'this>(&'this mut self) -> intravisit::NestedVisitorMap<'this, 'tcx> {
         intravisit::NestedVisitorMap::All(&self.tcx.hir())
     }
@@ -838,6 +850,12 @@ impl<'a, 'tcx> intravisit::Visitor<'tcx> for LintLevelMapBuilder<'a, 'tcx> {
         })
     }
 
+    fn visit_arm(&mut self, a: &'tcx hir::Arm) {
+        self.with_lint_attrs(a.hir_id, &a.attrs, |builder| {
+            intravisit::walk_arm(builder, a);
+        })
+    }
+
     fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem) {
         self.with_lint_attrs(trait_item.hir_id, &trait_item.attrs, |builder| {
             intravisit::walk_trait_item(builder, trait_item);
@@ -860,34 +878,35 @@ pub fn provide(providers: &mut Providers<'_>) {
 /// This is used to test whether a lint should not even begin to figure out whether it should
 /// be reported on the current node.
 pub fn in_external_macro(sess: &Session, span: Span) -> bool {
-    let info = match span.ctxt().outer().expn_info() {
+    let info = match span.ctxt().outer_expn_info() {
         Some(info) => info,
         // no ExpnInfo means this span doesn't come from a macro
         None => return false,
     };
 
     match info.format {
-        ExpnFormat::MacroAttribute(..) => return true, // definitely a plugin
-        ExpnFormat::CompilerDesugaring(_) => return true, // well, it's "external"
-        ExpnFormat::MacroBang(..) => {} // check below
-    }
+        ExpnFormat::MacroAttribute(..) => true, // definitely a plugin
+        ExpnFormat::CompilerDesugaring(CompilerDesugaringKind::ForLoop) => false,
+        ExpnFormat::CompilerDesugaring(_) => true, // well, it's "external"
+        ExpnFormat::MacroBang(..) => {
+            let def_site = match info.def_site {
+                Some(span) => span,
+                // no span for the def_site means it's an external macro
+                None => return true,
+            };
 
-    let def_site = match info.def_site {
-        Some(span) => span,
-        // no span for the def_site means it's an external macro
-        None => return true,
-    };
-
-    match sess.source_map().span_to_snippet(def_site) {
-        Ok(code) => !code.starts_with("macro_rules"),
-        // no snippet = external macro or compiler-builtin expansion
-        Err(_) => true,
+            match sess.source_map().span_to_snippet(def_site) {
+                Ok(code) => !code.starts_with("macro_rules"),
+                // no snippet = external macro or compiler-builtin expansion
+                Err(_) => true,
+            }
+        }
     }
 }
 
 /// Returns whether `span` originates in a derive macro's expansion
 pub fn in_derive_expansion(span: Span) -> bool {
-    let info = match span.ctxt().outer().expn_info() {
+    let info = match span.ctxt().outer_expn_info() {
         Some(info) => info,
         // no ExpnInfo means this span doesn't come from a macro
         None => return false,

@@ -1,6 +1,6 @@
 use rustc_lint;
 use rustc::session::{self, config};
-use rustc::hir::def_id::{DefId, DefIndex, DefIndexAddressSpace, CrateNum, LOCAL_CRATE};
+use rustc::hir::def_id::{DefId, DefIndex, CrateNum, LOCAL_CRATE};
 use rustc::hir::HirId;
 use rustc::middle::cstore::CrateStore;
 use rustc::middle::privacy::AccessLevels;
@@ -18,6 +18,7 @@ use rustc_target::spec::TargetTriple;
 use syntax::source_map;
 use syntax::feature_gate::UnstableFeatures;
 use syntax::json::JsonEmitter;
+use syntax::symbol::sym;
 use errors;
 use errors::emitter::{Emitter, EmitterWriter};
 use parking_lot::ReentrantMutex;
@@ -43,7 +44,7 @@ pub type ExternalPaths = FxHashMap<DefId, (Vec<String>, clean::TypeKind)>;
 
 pub struct DocContext<'tcx> {
 
-    pub tcx: TyCtxt<'tcx, 'tcx, 'tcx>,
+    pub tcx: TyCtxt<'tcx>,
     pub resolver: Rc<Option<RefCell<interface::BoxedResolver>>>,
     /// The stack of module NodeIds up till this point
     pub crate_name: Option<String>,
@@ -66,13 +67,13 @@ pub struct DocContext<'tcx> {
     pub ct_substs: RefCell<FxHashMap<DefId, clean::Constant>>,
     /// Table DefId of `impl Trait` in argument position -> bounds
     pub impl_trait_bounds: RefCell<FxHashMap<DefId, Vec<clean::GenericBound>>>,
-    pub send_trait: Option<DefId>,
     pub fake_def_ids: RefCell<FxHashMap<CrateNum, DefId>>,
     pub all_fake_def_ids: RefCell<FxHashSet<DefId>>,
     /// Auto-trait or blanket impls processed so far, as `(self_ty, trait_def_id)`.
     // FIXME(eddyb) make this a `ty::TraitRef<'tcx>` set.
     pub generated_synthetics: RefCell<FxHashSet<(Ty<'tcx>, DefId)>>,
     pub all_traits: Vec<DefId>,
+    pub auto_traits: Vec<DefId>,
 }
 
 impl<'tcx> DocContext<'tcx> {
@@ -112,8 +113,8 @@ impl<'tcx> DocContext<'tcx> {
     // registered after the AST is constructed would require storing the defid mapping in a
     // RefCell, decreasing the performance for normal compilation for very little gain.
     //
-    // Instead, we construct 'fake' def ids, which start immediately after the last DefId in
-    // DefIndexAddressSpace::Low. In the Debug impl for clean::Item, we explicitly check for fake
+    // Instead, we construct 'fake' def ids, which start immediately after the last DefId.
+    // In the Debug impl for clean::Item, we explicitly check for fake
     // def ids, as we'll end up with a panic if we use the DefId Debug impl for fake DefIds
     pub fn next_def_id(&self, crate_num: CrateNum) -> DefId {
         let start_def_id = {
@@ -122,11 +123,11 @@ impl<'tcx> DocContext<'tcx> {
                     .hir()
                     .definitions()
                     .def_path_table()
-                    .next_id(DefIndexAddressSpace::Low)
+                    .next_id()
             } else {
                 self.cstore
                     .def_path_table(crate_num)
-                    .next_id(DefIndexAddressSpace::Low)
+                    .next_id()
             };
 
             DefId {
@@ -142,10 +143,7 @@ impl<'tcx> DocContext<'tcx> {
             crate_num,
             DefId {
                 krate: crate_num,
-                index: DefIndex::from_array_index(
-                    def_id.index.as_array_index() + 1,
-                    def_id.index.address_space(),
-                ),
+                index: DefIndex::from(def_id.index.index() + 1),
             },
         );
 
@@ -319,7 +317,7 @@ pub fn run_core(options: RustdocOptions) -> (clean::Crate, RenderInfo, RenderOpt
         // Ensure that rustdoc works even if rustc is feature-staged
         unstable_features: UnstableFeatures::Allow,
         actually_rustdoc: true,
-        debugging_opts: debugging_options.clone(),
+        debugging_opts: debugging_options,
         error_format,
         edition,
         describe_lints,
@@ -348,7 +346,7 @@ pub fn run_core(options: RustdocOptions) -> (clean::Crate, RenderInfo, RenderOpt
         // current architecture.
         let resolver = abort_on_err(compiler.expansion(), sess).peek().1.clone();
 
-        if sess.err_count() > 0 {
+        if sess.has_errors() {
             sess.fatal("Compilation failed, aborting rustdoc");
         }
 
@@ -369,15 +367,10 @@ pub fn run_core(options: RustdocOptions) -> (clean::Crate, RenderInfo, RenderOpt
                                     .collect()
             };
 
-            let send_trait = if crate_name == Some("core".to_string()) {
-                clean::path_to_def_local(tcx, &["marker", "Send"])
-            } else {
-                clean::path_to_def(tcx, &["core", "marker", "Send"])
-            };
-
             let mut renderinfo = RenderInfo::default();
             renderinfo.access_levels = access_levels;
 
+            let all_traits = tcx.all_traits(LOCAL_CRATE).to_vec();
             let ctxt = DocContext {
                 tcx,
                 resolver,
@@ -390,11 +383,13 @@ pub fn run_core(options: RustdocOptions) -> (clean::Crate, RenderInfo, RenderOpt
                 lt_substs: Default::default(),
                 ct_substs: Default::default(),
                 impl_trait_bounds: Default::default(),
-                send_trait: send_trait,
                 fake_def_ids: Default::default(),
                 all_fake_def_ids: Default::default(),
                 generated_synthetics: Default::default(),
-                all_traits: tcx.all_traits(LOCAL_CRATE).to_vec(),
+                auto_traits: all_traits.iter().cloned().filter(|trait_def_id| {
+                    tcx.trait_is_auto(*trait_def_id)
+                }).collect(),
+                all_traits,
             };
             debug!("crate: {:?}", tcx.hir().krate());
 
@@ -418,24 +413,24 @@ pub fn run_core(options: RustdocOptions) -> (clean::Crate, RenderInfo, RenderOpt
 
             // Process all of the crate attributes, extracting plugin metadata along
             // with the passes which we are supposed to run.
-            for attr in krate.module.as_ref().unwrap().attrs.lists("doc") {
+            for attr in krate.module.as_ref().unwrap().attrs.lists(sym::doc) {
                 let diag = ctxt.sess().diagnostic();
 
                 let name = attr.name_or_empty();
                 if attr.is_word() {
-                    if name == "no_default_passes" {
+                    if name == sym::no_default_passes {
                         report_deprecated_attr("no_default_passes", diag);
                         if default_passes == passes::DefaultPassOption::Default {
                             default_passes = passes::DefaultPassOption::None;
                         }
                     }
                 } else if let Some(value) = attr.value_str() {
-                    let sink = match name.get() {
-                        "passes" => {
+                    let sink = match name {
+                        sym::passes => {
                             report_deprecated_attr("passes = \"...\"", diag);
                             &mut manual_passes
                         },
-                        "plugins" => {
+                        sym::plugins => {
                             report_deprecated_attr("plugins = \"...\"", diag);
                             eprintln!("WARNING: #![doc(plugins = \"...\")] no longer functions; \
                                       see CVE-2018-1000622");
@@ -448,7 +443,7 @@ pub fn run_core(options: RustdocOptions) -> (clean::Crate, RenderInfo, RenderOpt
                     }
                 }
 
-                if attr.is_word() && name == "document_private_items" {
+                if attr.is_word() && name == sym::document_private_items {
                     if default_passes == passes::DefaultPassOption::Default {
                         default_passes = passes::DefaultPassOption::Private;
                     }

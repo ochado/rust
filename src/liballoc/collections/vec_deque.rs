@@ -1835,8 +1835,8 @@ impl<T> VecDeque<T> {
     /// Retains only the elements specified by the predicate.
     ///
     /// In other words, remove all elements `e` such that `f(&e)` returns false.
-    /// This method operates in place and preserves the order of the retained
-    /// elements.
+    /// This method operates in place, visiting each element exactly once in the
+    /// original order, and preserves the order of the retained elements.
     ///
     /// # Examples
     ///
@@ -1847,6 +1847,20 @@ impl<T> VecDeque<T> {
     /// buf.extend(1..5);
     /// buf.retain(|&x| x%2 == 0);
     /// assert_eq!(buf, [2, 4]);
+    /// ```
+    ///
+    /// The exact order may be useful for tracking external state, like an index.
+    ///
+    /// ```
+    /// use std::collections::VecDeque;
+    ///
+    /// let mut buf = VecDeque::new();
+    /// buf.extend(1..6);
+    ///
+    /// let keep = [false, true, true, false, true];
+    /// let mut i = 0;
+    /// buf.retain(|_| (keep[i], i += 1).0);
+    /// assert_eq!(buf, [2, 3, 5]);
     /// ```
     #[stable(feature = "vec_deque_retain", since = "1.4.0")]
     pub fn retain<F>(&mut self, mut f: F)
@@ -1934,8 +1948,6 @@ impl<T> VecDeque<T> {
     /// # Examples
     ///
     /// ```
-    /// #![feature(vecdeque_rotate)]
-    ///
     /// use std::collections::VecDeque;
     ///
     /// let mut buf: VecDeque<_> = (0..10).collect();
@@ -1949,7 +1961,7 @@ impl<T> VecDeque<T> {
     /// }
     /// assert_eq!(buf, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     /// ```
-    #[unstable(feature = "vecdeque_rotate", issue = "56686")]
+    #[stable(feature = "vecdeque_rotate", since = "1.36.0")]
     pub fn rotate_left(&mut self, mid: usize) {
         assert!(mid <= self.len());
         let k = self.len() - mid;
@@ -1979,8 +1991,6 @@ impl<T> VecDeque<T> {
     /// # Examples
     ///
     /// ```
-    /// #![feature(vecdeque_rotate)]
-    ///
     /// use std::collections::VecDeque;
     ///
     /// let mut buf: VecDeque<_> = (0..10).collect();
@@ -1994,7 +2004,7 @@ impl<T> VecDeque<T> {
     /// }
     /// assert_eq!(buf, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     /// ```
-    #[unstable(feature = "vecdeque_rotate", issue = "56686")]
+    #[stable(feature = "vecdeque_rotate", since = "1.36.0")]
     pub fn rotate_right(&mut self, k: usize) {
         assert!(k <= self.len());
         let mid = self.len() - k;
@@ -2699,6 +2709,11 @@ impl<T: fmt::Debug> fmt::Debug for VecDeque<T> {
 
 #[stable(feature = "vecdeque_vec_conversions", since = "1.10.0")]
 impl<T> From<Vec<T>> for VecDeque<T> {
+    /// Turn a [`Vec<T>`] into a [`VecDeque<T>`].
+    ///
+    /// This avoids reallocating where possible, but the conditions for that are
+    /// strict, and subject to change, and so shouldn't be relied upon unless the
+    /// `Vec<T>` came from `From<VecDeque<T>>` and hasn't been reallocated.
     fn from(mut other: Vec<T>) -> Self {
         unsafe {
             let other_buf = other.as_mut_ptr();
@@ -2725,6 +2740,32 @@ impl<T> From<Vec<T>> for VecDeque<T> {
 
 #[stable(feature = "vecdeque_vec_conversions", since = "1.10.0")]
 impl<T> From<VecDeque<T>> for Vec<T> {
+    /// Turn a [`VecDeque<T>`] into a [`Vec<T>`].
+    ///
+    /// This never needs to re-allocate, but does need to do O(n) data movement if
+    /// the circular buffer doesn't happen to be at the beginning of the allocation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::VecDeque;
+    ///
+    /// // This one is O(1).
+    /// let deque: VecDeque<_> = (1..5).collect();
+    /// let ptr = deque.as_slices().0.as_ptr();
+    /// let vec = Vec::from(deque);
+    /// assert_eq!(vec, [1, 2, 3, 4]);
+    /// assert_eq!(vec.as_ptr(), ptr);
+    ///
+    /// // This one needs data rearranging.
+    /// let mut deque: VecDeque<_> = (1..5).collect();
+    /// deque.push_front(9);
+    /// deque.push_front(8);
+    /// let ptr = deque.as_slices().1.as_ptr();
+    /// let vec = Vec::from(deque);
+    /// assert_eq!(vec, [8, 9, 1, 2, 3, 4]);
+    /// assert_eq!(vec.as_ptr(), ptr);
+    /// ```
     fn from(other: VecDeque<T>) -> Self {
         unsafe {
             let buf = other.buf.ptr();

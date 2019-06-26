@@ -4,6 +4,7 @@ use crate::ty::{self, ParamEnvAnd, Ty, TyCtxt};
 use crate::ty::subst::SubstsRef;
 use crate::dep_graph::SerializedDepNodeIndex;
 use crate::hir::def_id::{CrateNum, DefId, DefIndex};
+use crate::mir;
 use crate::mir::interpret::GlobalId;
 use crate::traits;
 use crate::traits::query::{
@@ -42,7 +43,7 @@ rustc_queries! {
             load_cached(tcx, id) {
                 let generics: Option<ty::Generics> = tcx.queries.on_disk_cache
                                                         .try_load_query_result(tcx, id);
-                generics.map(|x| tcx.alloc_generics(x))
+                generics.map(|x| &*tcx.arena.alloc(x))
             }
         }
 
@@ -61,13 +62,13 @@ rustc_queries! {
         /// predicate gets in the way of some checks, which are intended
         /// to operate over only the actual where-clauses written by the
         /// user.)
-        query predicates_of(_: DefId) -> Lrc<ty::GenericPredicates<'tcx>> {}
+        query predicates_of(_: DefId) -> &'tcx ty::GenericPredicates<'tcx> {}
 
         query native_libraries(_: CrateNum) -> Lrc<Vec<NativeLibrary>> {
             desc { "looking up the native libraries of a linked crate" }
         }
 
-        query lint_levels(_: CrateNum) -> Lrc<lint::LintLevelMap> {
+        query lint_levels(_: CrateNum) -> &'tcx lint::LintLevelMap {
             eval_always
             desc { "computing the lint levels for items in this crate" }
         }
@@ -88,7 +89,7 @@ rustc_queries! {
             desc { "getting a list of all mir_keys" }
         }
 
-        /// Maps DefId's that have an associated Mir to the result
+        /// Maps DefId's that have an associated `mir::Body` to the result
         /// of the MIR qualify_consts pass. The actual meaning of
         /// the value isn't known except to the pass itself.
         query mir_const_qualif(key: DefId) -> (u8, &'tcx BitSet<mir::Local>) {
@@ -97,28 +98,28 @@ rustc_queries! {
 
         /// Fetch the MIR for a given `DefId` right after it's built - this includes
         /// unreachable code.
-        query mir_built(_: DefId) -> &'tcx Steal<mir::Mir<'tcx>> {}
+        query mir_built(_: DefId) -> &'tcx Steal<mir::Body<'tcx>> {}
 
         /// Fetch the MIR for a given `DefId` up till the point where it is
         /// ready for const evaluation.
         ///
         /// See the README for the `mir` module for details.
-        query mir_const(_: DefId) -> &'tcx Steal<mir::Mir<'tcx>> {
+        query mir_const(_: DefId) -> &'tcx Steal<mir::Body<'tcx>> {
             no_hash
         }
 
-        query mir_validated(_: DefId) -> &'tcx Steal<mir::Mir<'tcx>> {
+        query mir_validated(_: DefId) -> &'tcx Steal<mir::Body<'tcx>> {
             no_hash
         }
 
         /// MIR after our optimization passes have run. This is MIR that is ready
         /// for codegen. This is also the only query that can fetch non-local MIR, at present.
-        query optimized_mir(key: DefId) -> &'tcx mir::Mir<'tcx> {
+        query optimized_mir(key: DefId) -> &'tcx mir::Body<'tcx> {
             cache { key.is_local() }
             load_cached(tcx, id) {
-                let mir: Option<crate::mir::Mir<'tcx>> = tcx.queries.on_disk_cache
+                let mir: Option<crate::mir::Body<'tcx>> = tcx.queries.on_disk_cache
                                                             .try_load_query_result(tcx, id);
-                mir.map(|x| tcx.alloc_mir(x))
+                mir.map(|x| &*tcx.arena.alloc(x))
             }
         }
     }
@@ -155,7 +156,7 @@ rustc_queries! {
     }
 
     Linking {
-        query wasm_import_module_map(_: CrateNum) -> Lrc<FxHashMap<DefId, String>> {
+        query wasm_import_module_map(_: CrateNum) -> &'tcx FxHashMap<DefId, String> {
             desc { "wasm import module map" }
         }
     }
@@ -166,11 +167,11 @@ rustc_queries! {
         /// equal to the `explicit_predicates_of` predicates plus the
         /// `inferred_outlives_of` predicates.
         query predicates_defined_on(_: DefId)
-            -> Lrc<ty::GenericPredicates<'tcx>> {}
+            -> &'tcx ty::GenericPredicates<'tcx> {}
 
-        /// Returns the predicates written explicit by the user.
+        /// Returns the predicates written explicitly by the user.
         query explicit_predicates_of(_: DefId)
-            -> Lrc<ty::GenericPredicates<'tcx>> {}
+            -> &'tcx ty::GenericPredicates<'tcx> {}
 
         /// Returns the inferred outlives predicates (e.g., for `struct
         /// Foo<'a, T> { x: &'a T }`, this would return `T: 'a`).
@@ -182,14 +183,14 @@ rustc_queries! {
         /// evaluate them even during type conversion, often before the
         /// full predicates are available (note that supertraits have
         /// additional acyclicity requirements).
-        query super_predicates_of(key: DefId) -> Lrc<ty::GenericPredicates<'tcx>> {
+        query super_predicates_of(key: DefId) -> &'tcx ty::GenericPredicates<'tcx> {
             desc { |tcx| "computing the supertraits of `{}`", tcx.def_path_str(key) }
         }
 
         /// To avoid cycles within the predicates of a single item we compute
         /// per-type-parameter predicates for resolving `T::AssocTy`.
         query type_param_predicates(key: (DefId, DefId))
-            -> Lrc<ty::GenericPredicates<'tcx>> {
+            -> &'tcx ty::GenericPredicates<'tcx> {
             no_force
             desc { |tcx| "computing the bounds for type parameter `{}`", {
                 let id = tcx.hir().as_local_hir_id(key.1).unwrap();
@@ -216,9 +217,9 @@ rustc_queries! {
             _: DefId
         ) -> Result<DtorckConstraint<'tcx>, NoSolution> {}
 
-        /// True if this is a const fn, use the `is_const_fn` to know whether your crate actually
-        /// sees it as const fn (e.g., the const-fn-ness might be unstable and you might not have
-        /// the feature gate active)
+        /// Returns `true` if this is a const fn, use the `is_const_fn` to know whether your crate
+        /// actually sees it as const fn (e.g., the const-fn-ness might be unstable and you might
+        /// not have the feature gate active).
         ///
         /// **Do not call this function manually.** It is only meant to cache the base data for the
         /// `is_const_fn` function.
@@ -226,7 +227,7 @@ rustc_queries! {
             desc { |tcx| "checking if item is const fn: `{}`", tcx.def_path_str(key) }
         }
 
-        /// Returns true if calls to the function may be promoted
+        /// Returns `true` if calls to the function may be promoted.
         ///
         /// This is either because the function is e.g., a tuple-struct or tuple-variant
         /// constructor, or because it has the `#[rustc_promotable]` attribute. The attribute should
@@ -237,37 +238,35 @@ rustc_queries! {
 
         query const_fn_is_allowed_fn_ptr(_: DefId) -> bool {}
 
-        /// True if this is a foreign item (i.e., linked via `extern { ... }`).
+        /// Returns `true` if this is a foreign item (i.e., linked via `extern { ... }`).
         query is_foreign_item(_: DefId) -> bool {}
 
         /// Returns `Some(mutability)` if the node pointed to by `def_id` is a static item.
         query static_mutability(_: DefId) -> Option<hir::Mutability> {}
 
-        /// Get a map with the variance of every item; use `item_variance`
-        /// instead.
-        query crate_variances(_: CrateNum) -> Lrc<ty::CrateVariancesMap<'tcx>> {
+        /// Gets a map with the variance of every item; use `item_variance` instead.
+        query crate_variances(_: CrateNum) -> &'tcx ty::CrateVariancesMap<'tcx> {
             desc { "computing the variances for items in this crate" }
         }
 
-        /// Maps from def-id of a type or region parameter to its
-        /// (inferred) variance.
+        /// Maps from the `DefId` of a type or region parameter to its (inferred) variance.
         query variances_of(_: DefId) -> &'tcx [ty::Variance] {}
     }
 
     TypeChecking {
-        /// Maps from def-id of a type to its (inferred) outlives.
+        /// Maps from thee `DefId` of a type to its (inferred) outlives.
         query inferred_outlives_crate(_: CrateNum)
-            -> Lrc<ty::CratePredicatesMap<'tcx>> {
+            -> &'tcx ty::CratePredicatesMap<'tcx> {
             desc { "computing the inferred outlives predicates for items in this crate" }
         }
     }
 
     Other {
-        /// Maps from an impl/trait def-id to a list of the def-ids of its items
-        query associated_item_def_ids(_: DefId) -> Lrc<Vec<DefId>> {}
+        /// Maps from an impl/trait `DefId to a list of the `DefId`s of its items.
+        query associated_item_def_ids(_: DefId) -> &'tcx [DefId] {}
 
-        /// Maps from a trait item to the trait item "descriptor"
-        query associated_item(_: DefId) -> ty::AssociatedItem {}
+        /// Maps from a trait item to the trait item "descriptor".
+        query associated_item(_: DefId) -> ty::AssocItem {}
 
         query impl_trait_ref(_: DefId) -> Option<ty::TraitRef<'tcx>> {}
         query impl_polarity(_: DefId) -> hir::ImplPolarity {}
@@ -276,10 +275,10 @@ rustc_queries! {
     }
 
     TypeChecking {
-        /// Maps a DefId of a type to a list of its inherent impls.
+        /// Maps a `DefId` of a type to a list of its inherent impls.
         /// Contains implementations of methods that are inherent to a type.
         /// Methods in these implementations don't need to be exported.
-        query inherent_impls(_: DefId) -> Lrc<Vec<DefId>> {
+        query inherent_impls(_: DefId) -> &'tcx [DefId] {
             eval_always
         }
     }
@@ -300,7 +299,7 @@ rustc_queries! {
             desc { |tcx| "linting {}", key.describe_as_module(tcx) }
         }
 
-        /// Checks the attributes in the module
+        /// Checks the attributes in the module.
         query check_mod_attrs(key: DefId) -> () {
             desc { |tcx| "checking attributes in {}", key.describe_as_module(tcx) }
         }
@@ -309,7 +308,7 @@ rustc_queries! {
             desc { |tcx| "checking for unstable API usage in {}", key.describe_as_module(tcx) }
         }
 
-        /// Checks the loops in the module
+        /// Checks the loops in the module.
         query check_mod_loops(key: DefId) -> () {
             desc { |tcx| "checking loops in {}", key.describe_as_module(tcx) }
         }
@@ -338,7 +337,7 @@ rustc_queries! {
             desc { |tcx| "collecting item types in {}", key.describe_as_module(tcx) }
         }
 
-        /// Caches CoerceUnsized kinds for impls on custom types.
+        /// Caches `CoerceUnsized` kinds for impls on custom types.
         query coerce_unsized_info(_: DefId)
             -> ty::adjustment::CoerceUnsizedInfo {}
     }
@@ -355,13 +354,13 @@ rustc_queries! {
                     .queries.on_disk_cache
                     .try_load_query_result(tcx, id);
 
-                typeck_tables.map(|tables| tcx.alloc_tables(tables))
+                typeck_tables.map(|tables| &*tcx.arena.alloc(tables))
             }
         }
     }
 
     Other {
-        query used_trait_imports(_: DefId) -> Lrc<DefIdSet> {}
+        query used_trait_imports(_: DefId) -> &'tcx DefIdSet {}
     }
 
     TypeChecking {
@@ -373,9 +372,9 @@ rustc_queries! {
     }
 
     BorrowChecking {
-        query borrowck(_: DefId) -> Lrc<BorrowCheckResult> {}
+        query borrowck(_: DefId) -> &'tcx BorrowCheckResult {}
 
-        /// Borrow checks the function body. If this is a closure, returns
+        /// Borrow-checks the function body. If this is a closure, returns
         /// additional requirements that the closure's creator must verify.
         query mir_borrowck(_: DefId) -> mir::BorrowCheckResult<'tcx> {}
     }
@@ -385,7 +384,7 @@ rustc_queries! {
         /// Not meant to be used directly outside of coherence.
         /// (Defined only for `LOCAL_CRATE`.)
         query crate_inherent_impls(k: CrateNum)
-            -> Lrc<CrateInherentImpls> {
+            -> &'tcx CrateInherentImpls {
             eval_always
             desc { "all inherent impls defined in crate `{:?}`", k }
         }
@@ -401,11 +400,11 @@ rustc_queries! {
     }
 
     Other {
-        /// Evaluate a constant without running sanity checks
+        /// Evaluates a constant without running sanity checks.
         ///
         /// **Do not use this** outside const eval. Const eval uses this to break query cycles
         /// during validation. Please add a comment to every use site explaining why using
-        /// `const_eval` isn't sufficient
+        /// `const_eval` isn't sufficient.
         query const_eval_raw(key: ty::ParamEnvAnd<'tcx, GlobalId<'tcx>>)
             -> ConstEvalRawResult<'tcx> {
             no_force
@@ -433,13 +432,31 @@ rustc_queries! {
                 tcx.queries.on_disk_cache.try_load_query_result(tcx, id).map(Ok)
             }
         }
+
+        /// Extracts a field of a (variant of a) const.
+        query const_field(
+            key: ty::ParamEnvAnd<'tcx, (&'tcx ty::Const<'tcx>, mir::Field)>
+        ) -> &'tcx ty::Const<'tcx> {
+            eval_always
+            no_force
+            desc { "extract field of const" }
+        }
+
+        /// Produces an absolute path representation of the given type. See also the documentation
+        /// on `std::any::type_name`.
+        query type_name(key: Ty<'tcx>) -> &'tcx ty::Const<'tcx> {
+            eval_always
+            no_force
+            desc { "get absolute path of type" }
+        }
+
     }
 
     TypeChecking {
         query check_match(_: DefId) -> () {}
 
         /// Performs part of the privacy check and computes "access levels".
-        query privacy_access_levels(_: CrateNum) -> Lrc<AccessLevels> {
+        query privacy_access_levels(_: CrateNum) -> &'tcx AccessLevels {
             eval_always
             desc { "privacy access levels" }
         }
@@ -458,7 +475,7 @@ rustc_queries! {
         /// in the case of closures, this will be redirected to the enclosing function.
         query region_scope_tree(_: DefId) -> &'tcx region::ScopeTree {}
 
-        query mir_shims(key: ty::InstanceDef<'tcx>) -> &'tcx mir::Mir<'tcx> {
+        query mir_shims(key: ty::InstanceDef<'tcx>) -> &'tcx mir::Body<'tcx> {
             no_force
             desc { |tcx| "generating MIR shim for `{}`", tcx.def_path_str(key.def_id()) }
         }
@@ -592,7 +609,7 @@ rustc_queries! {
 
     Other {
         query dylib_dependency_formats(_: CrateNum)
-                                        -> Lrc<Vec<(CrateNum, LinkagePreference)>> {
+                                        -> &'tcx [(CrateNum, LinkagePreference)] {
             desc { "dylib dependency formats of crate" }
         }
     }
@@ -626,8 +643,12 @@ rustc_queries! {
             fatal_cycle
             desc { "test whether a crate has #![no_builtins]" }
         }
+        query symbol_mangling_version(_: CrateNum) -> SymbolManglingVersion {
+            fatal_cycle
+            desc { "query a crate's symbol mangling version" }
+        }
 
-        query extern_crate(_: DefId) -> Lrc<Option<ExternCrate>> {
+        query extern_crate(_: DefId) -> Option<&'tcx ExternCrate> {
             eval_always
             desc { "getting crate's ExternCrateData" }
         }
@@ -639,14 +660,14 @@ rustc_queries! {
             desc { "computing whether impls specialize one another" }
         }
         query in_scope_traits_map(_: DefIndex)
-            -> Option<Lrc<FxHashMap<ItemLocalId, Lrc<StableVec<TraitCandidate>>>>> {
+            -> Option<&'tcx FxHashMap<ItemLocalId, StableVec<TraitCandidate>>> {
             eval_always
             desc { "traits in scope at a block" }
         }
     }
 
     Other {
-        query module_exports(_: DefId) -> Option<Lrc<Vec<Export<hir::HirId>>>> {
+        query module_exports(_: DefId) -> Option<&'tcx [Export<hir::HirId>]> {
             eval_always
         }
     }
@@ -660,12 +681,12 @@ rustc_queries! {
     }
 
     Linking {
-        // The DefIds of all non-generic functions and statics in the given crate
+        // The `DefId`s of all non-generic functions and statics in the given crate
         // that can be reached from outside the crate.
         //
         // We expect this items to be available for being linked to.
         //
-        // This query can also be called for LOCAL_CRATE. In this case it will
+        // This query can also be called for `LOCAL_CRATE`. In this case it will
         // compute which items will be reachable to other crates, taking into account
         // the kind of crate that is currently compiled. Crates with only a
         // C interface have fewer reachable things.
@@ -673,7 +694,7 @@ rustc_queries! {
         // Does not include external symbols that don't have a corresponding DefId,
         // like the compiler-generated `main` function and so on.
         query reachable_non_generics(_: CrateNum)
-            -> Lrc<DefIdMap<SymbolExportLevel>> {
+            -> &'tcx DefIdMap<SymbolExportLevel> {
             desc { "looking up the exported symbols of a crate" }
         }
         query is_reachable_non_generic(_: DefId) -> bool {}
@@ -683,15 +704,15 @@ rustc_queries! {
     Codegen {
         query upstream_monomorphizations(
             k: CrateNum
-        ) -> Lrc<DefIdMap<Lrc<FxHashMap<SubstsRef<'tcx>, CrateNum>>>> {
+        ) -> &'tcx DefIdMap<FxHashMap<SubstsRef<'tcx>, CrateNum>> {
             desc { "collecting available upstream monomorphizations `{:?}`", k }
         }
         query upstream_monomorphizations_for(_: DefId)
-            -> Option<Lrc<FxHashMap<SubstsRef<'tcx>, CrateNum>>> {}
+            -> Option<&'tcx FxHashMap<SubstsRef<'tcx>, CrateNum>> {}
     }
 
     Other {
-        query foreign_modules(_: CrateNum) -> Lrc<Vec<ForeignModule>> {
+        query foreign_modules(_: CrateNum) -> &'tcx [ForeignModule] {
             desc { "looking up the foreign modules of a linked crate" }
         }
 
@@ -726,19 +747,19 @@ rustc_queries! {
 
     TypeChecking {
         query implementations_of_trait(_: (CrateNum, DefId))
-            -> Lrc<Vec<DefId>> {
+            -> &'tcx [DefId] {
             no_force
             desc { "looking up implementations of a trait in a crate" }
         }
         query all_trait_implementations(_: CrateNum)
-            -> Lrc<Vec<DefId>> {
+            -> &'tcx [DefId] {
             desc { "looking up all (?) trait implementations" }
         }
     }
 
     Other {
         query dllimport_foreign_items(_: CrateNum)
-            -> Lrc<FxHashSet<DefId>> {
+            -> &'tcx FxHashSet<DefId> {
             desc { "dllimport_foreign_items" }
         }
         query is_dllimport_foreign_item(_: DefId) -> bool {}
@@ -756,19 +777,19 @@ rustc_queries! {
 
     BorrowChecking {
         // Lifetime resolution. See `middle::resolve_lifetimes`.
-        query resolve_lifetimes(_: CrateNum) -> Lrc<ResolveLifetimes> {
+        query resolve_lifetimes(_: CrateNum) -> &'tcx ResolveLifetimes {
             desc { "resolving lifetimes" }
         }
         query named_region_map(_: DefIndex) ->
-            Option<Lrc<FxHashMap<ItemLocalId, Region>>> {
+            Option<&'tcx FxHashMap<ItemLocalId, Region>> {
             desc { "looking up a named region" }
         }
         query is_late_bound_map(_: DefIndex) ->
-            Option<Lrc<FxHashSet<ItemLocalId>>> {
+            Option<&'tcx FxHashSet<ItemLocalId>> {
             desc { "testing if a region is late bound" }
         }
         query object_lifetime_defaults_map(_: DefIndex)
-            -> Option<Lrc<FxHashMap<ItemLocalId, Lrc<Vec<ObjectLifetimeDefault>>>>> {
+            -> Option<&'tcx FxHashMap<ItemLocalId, Vec<ObjectLifetimeDefault>>> {
             desc { "looking up lifetime defaults for a region" }
         }
     }
@@ -786,29 +807,29 @@ rustc_queries! {
             eval_always
             desc { "fetching what a crate is named" }
         }
-        query item_children(_: DefId) -> Lrc<Vec<Export<hir::HirId>>> {}
+        query item_children(_: DefId) -> &'tcx [Export<hir::HirId>] {}
         query extern_mod_stmt_cnum(_: DefId) -> Option<CrateNum> {}
 
-        query get_lib_features(_: CrateNum) -> Lrc<LibFeatures> {
+        query get_lib_features(_: CrateNum) -> &'tcx LibFeatures {
             eval_always
             desc { "calculating the lib features map" }
         }
         query defined_lib_features(_: CrateNum)
-            -> Lrc<Vec<(Symbol, Option<Symbol>)>> {
+            -> &'tcx [(Symbol, Option<Symbol>)] {
             desc { "calculating the lib features defined in a crate" }
         }
-        query get_lang_items(_: CrateNum) -> Lrc<LanguageItems> {
+        query get_lang_items(_: CrateNum) -> &'tcx LanguageItems {
             eval_always
             desc { "calculating the lang items map" }
         }
-        query defined_lang_items(_: CrateNum) -> Lrc<Vec<(DefId, usize)>> {
+        query defined_lang_items(_: CrateNum) -> &'tcx [(DefId, usize)] {
             desc { "calculating the lang items defined in a crate" }
         }
-        query missing_lang_items(_: CrateNum) -> Lrc<Vec<LangItem>> {
+        query missing_lang_items(_: CrateNum) -> &'tcx [LangItem] {
             desc { "calculating the missing lang items in a crate" }
         }
         query visible_parent_map(_: CrateNum)
-            -> Lrc<DefIdMap<DefId>> {
+            -> &'tcx DefIdMap<DefId> {
             desc { "calculating the visible parent map" }
         }
         query missing_extern_crate_item(_: CrateNum) -> bool {
@@ -819,19 +840,19 @@ rustc_queries! {
             eval_always
             desc { "looking at the source for a crate" }
         }
-        query postorder_cnums(_: CrateNum) -> Lrc<Vec<CrateNum>> {
+        query postorder_cnums(_: CrateNum) -> &'tcx [CrateNum] {
             eval_always
             desc { "generating a postorder list of CrateNums" }
         }
 
-        query freevars(_: DefId) -> Option<Lrc<Vec<hir::Freevar>>> {
+        query upvars(_: DefId) -> Option<&'tcx FxIndexMap<hir::HirId, hir::Upvar>> {
             eval_always
         }
         query maybe_unused_trait_import(_: DefId) -> bool {
             eval_always
         }
         query maybe_unused_extern_crates(_: CrateNum)
-            -> Lrc<Vec<(DefId, Span)>> {
+            -> &'tcx [(DefId, Span)] {
             eval_always
             desc { "looking up all possibly unused extern crates" }
         }
@@ -840,11 +861,11 @@ rustc_queries! {
             eval_always
         }
 
-        query stability_index(_: CrateNum) -> Lrc<stability::Index<'tcx>> {
+        query stability_index(_: CrateNum) -> &'tcx stability::Index<'tcx> {
             eval_always
             desc { "calculating the stability index for the local crate" }
         }
-        query all_crate_nums(_: CrateNum) -> Lrc<Vec<CrateNum>> {
+        query all_crate_nums(_: CrateNum) -> &'tcx [CrateNum] {
             eval_always
             desc { "fetching all foreign CrateNum instances" }
         }
@@ -852,7 +873,7 @@ rustc_queries! {
         /// A vector of every trait accessible in the whole crate
         /// (i.e., including those from subcrates). This is used only for
         /// error reporting.
-        query all_traits(_: CrateNum) -> Lrc<Vec<DefId>> {
+        query all_traits(_: CrateNum) -> &'tcx [DefId] {
             desc { "fetching all foreign and local traits" }
         }
     }
@@ -1052,7 +1073,7 @@ rustc_queries! {
     }
 
     Other {
-        query target_features_whitelist(_: CrateNum) -> Lrc<FxHashMap<String, Option<String>>> {
+        query target_features_whitelist(_: CrateNum) -> &'tcx FxHashMap<String, Option<Symbol>> {
             eval_always
             desc { "looking up the whitelist of target features" }
         }
@@ -1064,7 +1085,7 @@ rustc_queries! {
             desc { |tcx| "estimating size for `{}`", tcx.def_path_str(def.def_id()) }
         }
 
-        query features_query(_: CrateNum) -> Lrc<feature_gate::Features> {
+        query features_query(_: CrateNum) -> &'tcx feature_gate::Features {
             eval_always
             desc { "looking up enabled feature gates" }
         }

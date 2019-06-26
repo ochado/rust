@@ -25,7 +25,7 @@ pub struct LinkerInfo {
 }
 
 impl LinkerInfo {
-    pub fn new(tcx: TyCtxt<'_, '_, '_>) -> LinkerInfo {
+    pub fn new(tcx: TyCtxt<'_>) -> LinkerInfo {
         LinkerInfo {
             exports: tcx.sess.crate_types.borrow().iter().map(|&c| {
                 (c, exported_symbols(tcx, c))
@@ -372,23 +372,21 @@ impl<'a> Linker for GccLinker<'a> {
     }
 
     fn export_symbols(&mut self, tmpdir: &Path, crate_type: CrateType) {
-        // If we're compiling a dylib, then we let symbol visibility in object
-        // files to take care of whether they're exported or not.
-        //
-        // If we're compiling a cdylib, however, we manually create a list of
-        // exported symbols to ensure we don't expose any more. The object files
-        // have far more public symbols than we actually want to export, so we
-        // hide them all here.
-        if crate_type == CrateType::Dylib ||
-           crate_type == CrateType::ProcMacro {
-            return
+        // Symbol visibility in object files typically takes care of this.
+        if crate_type == CrateType::Executable {
+            return;
         }
 
-        // Symbol visibility takes care of this for the WebAssembly.
-        // Additionally the only known linker, LLD, doesn't support the script
-        // arguments just yet
-        if self.sess.target.target.arch == "wasm32" {
+        // We manually create a list of exported symbols to ensure we don't expose any more.
+        // The object files have far more public symbols than we actually want to export,
+        // so we hide them all here.
+
+        if !self.sess.target.target.options.limit_rdylib_exports {
             return;
+        }
+
+        if crate_type == CrateType::ProcMacro {
+            return
         }
 
         let mut arg = OsString::new();
@@ -645,6 +643,11 @@ impl<'a> Linker for MsvcLinker<'a> {
     fn export_symbols(&mut self,
                       tmpdir: &Path,
                       crate_type: CrateType) {
+        // Symbol visibility takes care of this typically
+        if crate_type == CrateType::Executable {
+            return;
+        }
+
         let path = tmpdir.join("lib.def");
         let res: io::Result<()> = try {
             let mut f = BufWriter::new(File::create(&path)?);
@@ -1002,7 +1005,7 @@ impl<'a> Linker for WasmLd<'a> {
     }
 }
 
-fn exported_symbols(tcx: TyCtxt<'_, '_, '_>, crate_type: CrateType) -> Vec<String> {
+fn exported_symbols(tcx: TyCtxt<'_>, crate_type: CrateType) -> Vec<String> {
     if let Some(ref exports) = tcx.sess.target.target.options.override_export_symbols {
         return exports.clone()
     }

@@ -128,9 +128,14 @@ build.
 #### MSVC
 [windows-msvc]: #windows-msvc
 
-MSVC builds of Rust additionally require an installation of Visual Studio 2013
-(or later) so `rustc` can use its linker. Make sure to check the “C++ tools”
-option.
+MSVC builds of Rust additionally require an installation of Visual Studio 2017
+(or later) so `rustc` can use its linker.  The simplest way is to get the
+[Visual Studio], check the “C++ build tools” and “Windows 10 SDK” workload.
+
+[Visual Studio]: https://visualstudio.microsoft.com/downloads/
+
+(If you're installing cmake yourself, be careful that “C++ CMake tools for
+Windows” doesn't get included under “Individual components”.)
 
 With these dependencies installed, you can build the compiler in a `cmd.exe`
 shell with:
@@ -145,7 +150,7 @@ then you may need to force rustbuild to use an older version. This can be done
 by manually calling the appropriate vcvars file before running the bootstrap.
 
 ```batch
-> CALL "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\amd64\vcvars64.bat"
+> CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 > python x.py build
 ```
 

@@ -108,17 +108,6 @@
 #![feature(core_intrinsics)]
 #![feature(drain_filter)]
 
-#[macro_use]
-extern crate build_helper;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate lazy_static;
-
-#[cfg(test)]
-#[macro_use]
-extern crate pretty_assertions;
-
 use std::cell::{RefCell, Cell};
 use std::collections::{HashSet, HashMap};
 use std::env;
@@ -134,7 +123,9 @@ use std::os::unix::fs::symlink as symlink_file;
 #[cfg(windows)]
 use std::os::windows::fs::symlink_file;
 
-use build_helper::{run_silent, run_suppressed, try_run_silent, try_run_suppressed, output, mtime};
+use build_helper::{
+    mtime, output, run_silent, run_suppressed, t, try_run_silent, try_run_suppressed,
+};
 use filetime::FileTime;
 
 use crate::util::{exe, libdir, OutputFolder, CiEnv};
@@ -279,14 +270,9 @@ pub struct Build {
 #[derive(Debug)]
 struct Crate {
     name: Interned<String>,
-    version: String,
     deps: HashSet<Interned<String>>,
     id: String,
     path: PathBuf,
-    doc_step: String,
-    build_step: String,
-    test_step: String,
-    bench_step: String,
 }
 
 impl Crate {
@@ -1223,8 +1209,7 @@ impl Build {
     /// when this function is called.
     pub fn cp_r(&self, src: &Path, dst: &Path) {
         if self.config.dry_run { return; }
-        for f in t!(fs::read_dir(src)) {
-            let f = t!(f);
+        for f in self.read_dir(src) {
             let path = f.path();
             let name = path.file_name().unwrap();
             let dst = dst.join(name);

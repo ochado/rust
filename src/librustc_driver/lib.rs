@@ -18,6 +18,7 @@
 
 #![deny(rust_2018_idioms)]
 #![deny(internal)]
+#![deny(unused_lifetimes)]
 
 pub extern crate getopts;
 #[cfg(unix)]
@@ -63,6 +64,7 @@ use syntax::ast;
 use syntax::source_map::FileLoader;
 use syntax::feature_gate::{GatedCfg, UnstableFeatures};
 use syntax::parse::{self, PResult};
+use syntax::symbol::sym;
 use syntax_pos::{DUMMY_SP, MultiSpan, FileName};
 
 pub mod pretty;
@@ -669,7 +671,7 @@ impl RustcDefaultCalls {
                         // through to build scripts.
                         let value = value.as_ref().map(|s| s.as_str());
                         let value = value.as_ref().map(|s| s.as_ref());
-                        if name != "target_feature" || value != Some("crt-static") {
+                        if name != sym::target_feature || value != Some("crt-static") {
                             if !allow_unstable_cfg && gated_cfg.is_some() {
                                 return None
                             }

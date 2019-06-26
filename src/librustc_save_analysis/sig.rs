@@ -374,7 +374,7 @@ impl Sig for ast::Item {
 
                 Ok(extend_sig(ty, text, defs, vec![]))
             }
-            ast::ItemKind::Fn(ref decl, ref header, ref generics, _) => {
+            ast::ItemKind::Fn(ref decl, header, ref generics, _) => {
                 let mut text = String::new();
                 if header.constness.node == ast::Constness::Const {
                     text.push_str("const ");
@@ -579,14 +579,14 @@ impl Sig for ast::Path {
         let res = scx.get_path_res(id.ok_or("Missing id for Path")?);
 
         let (name, start, end) = match res {
-            Res::Label(..) | Res::PrimTy(..) | Res::SelfTy(..) | Res::Err => {
+            Res::PrimTy(..) | Res::SelfTy(..) | Res::Err => {
                 return Ok(Signature {
                     text: pprust::path_to_string(self),
                     defs: vec![],
                     refs: vec![],
                 })
             }
-            Res::Def(DefKind::AssociatedConst, _)
+            Res::Def(DefKind::AssocConst, _)
             | Res::Def(DefKind::Variant, _)
             | Res::Def(DefKind::Ctor(..), _) => {
                 let len = self.segments.len();

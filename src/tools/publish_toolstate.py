@@ -3,6 +3,7 @@
 
 import sys
 import re
+import os
 import json
 import datetime
 import collections
@@ -53,23 +54,35 @@ def read_current_status(current_commit, path):
                 return json.loads(status)
     return {}
 
+def gh_url():
+    return os.environ['TOOLSTATE_ISSUES_API_URL']
+
+def maybe_delink(message):
+    if os.environ.get('TOOLSTATE_SKIP_MENTIONS') is not None:
+        return message.replace("@", "")
+    return message
+
 def issue(
     tool,
+    status,
     maintainers,
     relevant_pr_number,
     relevant_pr_user,
     pr_reviewer,
 ):
     # Open an issue about the toolstate failure.
-    gh_url = 'https://api.github.com/repos/rust-lang/rust/issues'
     assignees = [x.strip() for x in maintainers.split('@') if x != '']
     assignees.append(relevant_pr_user)
+    if status == 'test-fail':
+        status_description = 'has failing tests'
+    else:
+        status_description = 'no longer builds'
     response = urllib2.urlopen(urllib2.Request(
-        gh_url,
+        gh_url(),
         json.dumps({
-            'body': textwrap.dedent('''\
+            'body': maybe_delink(textwrap.dedent('''\
             Hello, this is your friendly neighborhood mergebot.
-            After merging PR {}, I observed that the tool {} no longer builds.
+            After merging PR {}, I observed that the tool {} {}.
             A follow-up PR to the repository {} is needed to fix the fallout.
 
             cc @{}, do you think you would have time to do the follow-up work?
@@ -77,7 +90,10 @@ def issue(
 
             cc @{}, the PR reviewer, and @rust-lang/compiler -- nominating for prioritization.
 
-            ''').format(relevant_pr_number, tool, REPOS.get(tool), relevant_pr_user, pr_reviewer),
+            ''').format(
+                relevant_pr_number, tool, status_description,
+                REPOS.get(tool), relevant_pr_user, pr_reviewer
+            )),
             'title': '`{}` no longer builds after {}'.format(tool, relevant_pr_number),
             'assignees': assignees,
             'labels': ['T-compiler', 'I-nominated'],
@@ -119,7 +135,7 @@ def update_latest(
         for status in latest:
             tool = status['tool']
             changed = False
-            build_failed = False
+            create_issue = False
 
             for os, s in current_status.items():
                 old = status[os]
@@ -137,14 +153,15 @@ def update_latest(
                         .format(tool, os, old, new)
                     message += '{} (cc {}, @rust-lang/infra).\n' \
                         .format(title, MAINTAINERS.get(tool))
-                    # only create issues for build failures. Other failures can be spurious
-                    if new == 'build-fail':
-                        build_failed = True
+                    # Most tools only create issues for build failures.
+                    # Other failures can be spurious.
+                    if new == 'build-fail' or (tool == 'miri' and new == 'test-fail'):
+                        create_issue = True
 
-            if build_failed:
+            if create_issue:
                 try:
                     issue(
-                        tool, MAINTAINERS.get(tool, ''),
+                        tool, new, MAINTAINERS.get(tool, ''),
                         relevant_pr_number, relevant_pr_user, pr_reviewer,
                     )
                 except IOError as e:
@@ -216,11 +233,10 @@ if __name__ == '__main__':
         f.write(message)
 
     # Write the toolstate comment on the PR as well.
-    gh_url = 'https://api.github.com/repos/rust-lang/rust/issues/{}/comments' \
-        .format(number)
+    issue_url = gh_url() + '/{}/comments'.format(number)
     response = urllib2.urlopen(urllib2.Request(
-        gh_url,
-        json.dumps({'body': message}),
+        issue_url,
+        json.dumps({'body': maybe_delink(message)}),
         {
             'Authorization': 'token ' + github_token,
             'Content-Type': 'application/json',

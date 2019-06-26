@@ -21,6 +21,7 @@
 
 #![deny(rust_2018_idioms)]
 #![deny(internal)]
+#![deny(unused_lifetimes)]
 
 #[macro_use]
 extern crate rustc;
@@ -74,7 +75,7 @@ pub fn provide(providers: &mut Providers<'_>) {
     };
 }
 
-fn lint_mod<'tcx>(tcx: TyCtxt<'_, 'tcx, 'tcx>, module_def_id: DefId) {
+fn lint_mod<'tcx>(tcx: TyCtxt<'tcx>, module_def_id: DefId) {
     lint::late_lint_mod(tcx, module_def_id, BuiltinCombinedModuleLateLintPass::new());
 }
 
@@ -372,11 +373,6 @@ pub fn register_builtins(store: &mut lint::LintStore, sess: Option<&Session>) {
             edition: None,
         },
         FutureIncompatibleInfo {
-            id: LintId::of(INCOHERENT_FUNDAMENTAL_IMPLS),
-            reference: "issue #46205 <https://github.com/rust-lang/rust/issues/46205>",
-            edition: None,
-        },
-        FutureIncompatibleInfo {
             id: LintId::of(ORDER_DEPENDENT_TRAIT_OBJECTS),
             reference: "issue #56484 <https://github.com/rust-lang/rust/issues/56484>",
             edition: None,
@@ -491,6 +487,8 @@ pub fn register_builtins(store: &mut lint::LintStore, sess: Option<&Session>) {
         "replaced with a generic attribute input check");
     store.register_removed("duplicate_matcher_binding_name",
         "converted into hard error, see https://github.com/rust-lang/rust/issues/57742");
+    store.register_removed("incoherent_fundamental_impls",
+        "converted into hard error, see https://github.com/rust-lang/rust/issues/46205");
 }
 
 pub fn register_internals(store: &mut lint::LintStore, sess: Option<&Session>) {

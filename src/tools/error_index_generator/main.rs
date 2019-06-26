@@ -15,6 +15,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::cell::RefCell;
 
+use syntax::edition::DEFAULT_EDITION;
 use syntax::diagnostics::metadata::{get_metadata_dir, ErrorMetadataMap, ErrorMetadata};
 
 use rustdoc::html::markdown::{Markdown, IdMap, ErrorCodes, PLAYGROUND};
@@ -97,7 +98,8 @@ impl Formatter for HTMLFormatter {
             Some(ref desc) => {
                 let mut id_map = self.0.borrow_mut();
                 write!(output, "{}",
-                    Markdown(desc, &[], RefCell::new(&mut id_map), ErrorCodes::Yes))?
+                    Markdown(desc, &[], RefCell::new(&mut id_map),
+                             ErrorCodes::Yes, DEFAULT_EDITION))?
             },
             None => write!(output, "<p>No description.</p>\n")?,
         }
@@ -264,7 +266,7 @@ fn main() {
         *slot.borrow_mut() = Some((None, String::from("https://play.rust-lang.org/")));
     });
     let (format, dst) = parse_args();
-    let result = syntax::with_globals(move || {
+    let result = syntax::with_default_globals(move || {
         main_with_result(format, &dst)
     });
     if let Err(e) = result {

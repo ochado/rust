@@ -10,7 +10,7 @@ use rustc_codegen_ssa::traits::*;
 
 use crate::common;
 use crate::type_of::LayoutLlvmExt;
-use crate::abi::{LlvmType, FnTypeExt};
+use crate::abi::{LlvmType, FnTypeLlvmExt};
 use syntax::ast;
 use rustc::ty::Ty;
 use rustc::ty::layout::{self, Align, Size, TyLayout};
@@ -327,7 +327,7 @@ impl LayoutTypeMethods<'tcx> for CodegenCx<'ll, 'tcx> {
     fn backend_field_index(&self, layout: TyLayout<'tcx>, index: usize) -> u64 {
         layout.llvm_field_index(index)
     }
-    fn scalar_pair_element_backend_type<'a>(
+    fn scalar_pair_element_backend_type(
         &self,
         layout: TyLayout<'tcx>,
         index: usize,

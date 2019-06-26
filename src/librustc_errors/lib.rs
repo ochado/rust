@@ -1,12 +1,17 @@
+//! Diagnostics creation and emission for `rustc`.
+//!
+//! This module contains the code for creating and emitting diagnostics.
+
 #![doc(html_root_url = "https://doc.rust-lang.org/nightly/")]
 
-#![feature(custom_attribute)]
+#![feature(crate_visibility_modifier)]
 #![allow(unused_attributes)]
 #![cfg_attr(unix, feature(libc))]
 #![feature(nll)]
 #![feature(optin_builtin_traits)]
 #![deny(rust_2018_idioms)]
 #![deny(internal)]
+#![deny(unused_lifetimes)]
 
 #[allow(unused_extern_crates)]
 extern crate serialize as rustc_serialize; // used by deriving
@@ -26,12 +31,14 @@ use std::borrow::Cow;
 use std::cell::Cell;
 use std::{error, fmt};
 use std::panic;
+use std::path::Path;
 
 use termcolor::{ColorSpec, Color};
 
 mod diagnostic;
 mod diagnostic_builder;
 pub mod emitter;
+pub mod annotate_snippet_emitter_writer;
 mod snippet;
 pub mod registry;
 mod styled_buffer;
@@ -294,20 +301,18 @@ impl error::Error for ExplicitBug {
 pub use diagnostic::{Diagnostic, SubDiagnostic, DiagnosticStyledString, DiagnosticId};
 pub use diagnostic_builder::DiagnosticBuilder;
 
-/// A handler deals with two kinds of compiler output.
-/// - Errors: certain errors (fatal, bug, unimpl) may cause immediate exit,
-///   others log errors for later reporting.
-/// - Directives: with --error-format=json, the compiler produces directives
-///   that indicate when certain actions have completed, which are useful for
-///   Cargo. They may change at any time and should not be considered a public
-///   API.
-///
-/// This crate's name (rustc_errors) doesn't encompass the directives, because
-/// directives were added much later.
+/// A handler deals with errors and other compiler output.
+/// Certain errors (fatal, bug, unimpl) may cause immediate exit,
+/// others log errors for later reporting.
 pub struct Handler {
     pub flags: HandlerFlags,
 
+    /// The number of errors that have been emitted, including duplicates.
+    ///
+    /// This is not necessarily the count that's reported to the user once
+    /// compilation ends.
     err_count: AtomicUsize,
+    deduplicated_err_count: AtomicUsize,
     emitter: Lock<Box<dyn Emitter + sync::Send>>,
     continue_after_error: AtomicBool,
     delayed_span_bugs: Lock<Vec<Diagnostic>>,
@@ -352,7 +357,7 @@ pub struct HandlerFlags {
 
 impl Drop for Handler {
     fn drop(&mut self) {
-        if self.err_count() == 0 {
+        if !self.has_errors() {
             let mut bugs = self.delayed_span_bugs.borrow_mut();
             let has_bugs = !bugs.is_empty();
             for bug in bugs.drain(..) {
@@ -407,6 +412,7 @@ impl Handler {
         Handler {
             flags,
             err_count: AtomicUsize::new(0),
+            deduplicated_err_count: AtomicUsize::new(0),
             emitter: Lock::new(e),
             continue_after_error: AtomicBool::new(true),
             delayed_span_bugs: Lock::new(Vec::new()),
@@ -428,6 +434,7 @@ impl Handler {
     pub fn reset_err_count(&self) {
         // actually frees the underlying memory (which `clear` would not do)
         *self.emitted_diagnostics.borrow_mut() = Default::default();
+        self.deduplicated_err_count.store(0, SeqCst);
         self.err_count.store(0, SeqCst);
     }
 
@@ -660,10 +667,10 @@ impl Handler {
     }
 
     pub fn print_error_count(&self, registry: &Registry) {
-        let s = match self.err_count() {
+        let s = match self.deduplicated_err_count.load(SeqCst) {
             0 => return,
             1 => "aborting due to previous error".to_string(),
-            _ => format!("aborting due to {} previous errors", self.err_count())
+            count => format!("aborting due to {} previous errors", count)
         };
         if self.treat_err_as_bug() {
             return;
@@ -705,10 +712,9 @@ impl Handler {
     }
 
     pub fn abort_if_errors(&self) {
-        if self.err_count() == 0 {
-            return;
+        if self.has_errors() {
+            FatalError.raise();
         }
-        FatalError.raise();
     }
     pub fn emit(&self, msp: &MultiSpan, msg: &str, lvl: Level) {
         if lvl == Warning && !self.flags.can_emit_warnings {
@@ -770,13 +776,16 @@ impl Handler {
         if self.emitted_diagnostics.borrow_mut().insert(diagnostic_hash) {
             self.emitter.borrow_mut().emit_diagnostic(db);
             if db.is_error() {
-                self.bump_err_count();
+                self.deduplicated_err_count.fetch_add(1, SeqCst);
             }
+        }
+        if db.is_error() {
+            self.bump_err_count();
         }
     }
 
-    pub fn maybe_emit_json_directive(&self, directive: String) {
-        self.emitter.borrow_mut().maybe_emit_json_directive(directive);
+    pub fn emit_artifact_notification(&self, path: &Path, artifact_type: &str) {
+        self.emitter.borrow_mut().emit_artifact_notification(path, artifact_type);
     }
 }
 

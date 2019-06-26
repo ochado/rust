@@ -1,9 +1,11 @@
 use super::*;
 use crate::dep_graph::{DepGraph, DepKind, DepNodeIndex};
 use crate::hir;
+use crate::hir::map::HirEntryMap;
 use crate::hir::def_id::{LOCAL_CRATE, CrateNum};
 use crate::hir::intravisit::{Visitor, NestedVisitorMap};
 use rustc_data_structures::svh::Svh;
+use rustc_data_structures::indexed_vec::IndexVec;
 use crate::ich::Fingerprint;
 use crate::middle::cstore::CrateStore;
 use crate::session::CrateDisambiguator;
@@ -12,11 +14,12 @@ use crate::util::nodemap::FxHashMap;
 use syntax::ast::NodeId;
 use syntax::source_map::SourceMap;
 use syntax_pos::Span;
+use std::iter::repeat;
 
 use crate::ich::StableHashingContext;
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher, StableHasherResult};
 
-/// A Visitor that walks over the HIR and collects Nodes into a HIR map
+/// A visitor that walks over the HIR and collects `Node`s into a HIR map.
 pub(super) struct NodeCollector<'a, 'hir> {
     /// The crate
     krate: &'hir Crate,
@@ -25,7 +28,7 @@ pub(super) struct NodeCollector<'a, 'hir> {
     source_map: &'a SourceMap,
 
     /// The node map
-    map: FxHashMap<HirId, Entry<'hir>>,
+    map: HirEntryMap<'hir>,
     /// The parent of this node
     parent_node: hir::HirId,
 
@@ -42,7 +45,7 @@ pub(super) struct NodeCollector<'a, 'hir> {
 
     hcx: StableHashingContext<'a>,
 
-    // We are collecting DepNode::HirBody hashes here so we can compute the
+    // We are collecting `DepNode::HirBody` hashes here so we can compute the
     // crate hash from then later on.
     hir_body_nodes: Vec<(DefPathHash, Fingerprint)>,
 }
@@ -106,7 +109,7 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
 
         let mut hir_body_nodes = Vec::new();
 
-        // Allocate DepNodes for the root module
+        // Allocate `DepNode`s for the root module.
         let (root_mod_sig_dep_index, root_mod_full_dep_index) = {
             let Crate {
                 ref module,
@@ -145,8 +148,7 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
         let mut collector = NodeCollector {
             krate,
             source_map: sess.source_map(),
-            map: FxHashMap::with_capacity_and_hasher(sess.current_node_id_count(),
-                Default::default()),
+            map: vec![None; definitions.def_index_count()],
             parent_node: hir::CRATE_HIR_ID,
             current_signature_dep_index: root_mod_sig_dep_index,
             current_full_dep_index: root_mod_full_dep_index,
@@ -171,7 +173,7 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
                                                   crate_disambiguator: CrateDisambiguator,
                                                   cstore: &dyn CrateStore,
                                                   commandline_args_hash: u64)
-                                                  -> (FxHashMap<HirId, Entry<'hir>>, Svh)
+                                                  -> (HirEntryMap<'hir>, Svh)
     {
         self.hir_body_nodes.sort_unstable_by_key(|bn| bn.0);
 
@@ -224,7 +226,17 @@ impl<'a, 'hir> NodeCollector<'a, 'hir> {
 
     fn insert_entry(&mut self, id: HirId, entry: Entry<'hir>) {
         debug!("hir_map: {:?} => {:?}", id, entry);
-        self.map.insert(id, entry);
+        let local_map = &mut self.map[id.owner.index()];
+        let i = id.local_id.as_u32() as usize;
+        if local_map.is_none() {
+            *local_map = Some(IndexVec::with_capacity(i + 1));
+        }
+        let local_map = local_map.as_mut().unwrap();
+        let len = local_map.len();
+        if i >= len {
+            local_map.extend(repeat(None).take(i - len + 1));
+        }
+        local_map[id.local_id] = Some(entry);
     }
 
     fn insert(&mut self, span: Span, hir_id: HirId, node: Node<'hir>) {
@@ -418,6 +430,16 @@ impl<'a, 'hir> Visitor<'hir> for NodeCollector<'a, 'hir> {
         });
     }
 
+    fn visit_arm(&mut self, arm: &'hir Arm) {
+        let node = Node::Arm(arm);
+
+        self.insert(arm.span, arm.hir_id, node);
+
+        self.with_parent(arm.hir_id, |this| {
+            intravisit::walk_arm(this, arm);
+        });
+    }
+
     fn visit_anon_const(&mut self, constant: &'hir AnonConst) {
         self.insert(DUMMY_SP, constant.hir_id, Node::AnonConst(constant));
 
@@ -567,8 +589,9 @@ struct HirItemLike<T> {
     hash_bodies: bool,
 }
 
-impl<'a, 'hir, T> HashStable<StableHashingContext<'hir>> for HirItemLike<T>
-    where T: HashStable<StableHashingContext<'hir>>
+impl<'hir, T> HashStable<StableHashingContext<'hir>> for HirItemLike<T>
+where
+    T: HashStable<StableHashingContext<'hir>>,
 {
     fn hash_stable<W: StableHasherResult>(&self,
                                           hcx: &mut StableHashingContext<'hir>,

@@ -11,11 +11,11 @@ use rustc_data_structures::indexed_vec::IndexVec;
 use rustc_data_structures::unify as ut;
 use crate::ty::ReStatic;
 use crate::ty::{self, Ty, TyCtxt};
-use crate::ty::{BrFresh, ReLateBound, ReVar};
+use crate::ty::{ReLateBound, ReVar};
 use crate::ty::{Region, RegionVid};
 
 use std::collections::BTreeMap;
-use std::{cmp, fmt, mem, u32};
+use std::{cmp, fmt, mem};
 use std::ops::Range;
 
 mod leak_check;
@@ -36,10 +36,6 @@ pub struct RegionConstraintCollector<'tcx> {
     /// is designated as their GLB (edges R3 <= R1 and R3 <= R2
     /// exist). This prevents us from making many such regions.
     glbs: CombineMap<'tcx>,
-
-    /// Global counter used during the GLB algorithm to create unique
-    /// names for fresh bound regions
-    bound_count: u32,
 
     /// The undo log records actions that might later be undone.
     ///
@@ -392,7 +388,6 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
             data,
             lubs,
             glbs,
-            bound_count: _,
             undo_log: _,
             num_open_snapshots: _,
             unification_table,
@@ -579,39 +574,6 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
         }
     }
 
-    pub fn new_bound(
-        &mut self,
-        tcx: TyCtxt<'_, '_, 'tcx>,
-        debruijn: ty::DebruijnIndex,
-    ) -> Region<'tcx> {
-        // Creates a fresh bound variable for use in GLB computations.
-        // See discussion of GLB computation in the large comment at
-        // the top of this file for more details.
-        //
-        // This computation is potentially wrong in the face of
-        // rollover.  It's conceivable, if unlikely, that one might
-        // wind up with accidental capture for nested functions in
-        // that case, if the outer function had bound regions created
-        // a very long time before and the inner function somehow
-        // wound up rolling over such that supposedly fresh
-        // identifiers were in fact shadowed. For now, we just assert
-        // that there is no rollover -- eventually we should try to be
-        // robust against this possibility, either by checking the set
-        // of bound identifiers that appear in a given expression and
-        // ensure that we generate one that is distinct, or by
-        // changing the representation of bound regions in a fn
-        // declaration
-
-        let sc = self.bound_count;
-        self.bound_count = sc + 1;
-
-        if sc >= self.bound_count {
-            bug!("rollover in RegionInference new_bound()");
-        }
-
-        tcx.mk_region(ReLateBound(debruijn, BrFresh(sc)))
-    }
-
     fn add_constraint(&mut self, constraint: Constraint<'tcx>, origin: SubregionOrigin<'tcx>) {
         // cannot add constraints once regions are resolved
         debug!(
@@ -738,7 +700,7 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
 
     pub fn lub_regions(
         &mut self,
-        tcx: TyCtxt<'_, '_, 'tcx>,
+        tcx: TyCtxt<'tcx>,
         origin: SubregionOrigin<'tcx>,
         a: Region<'tcx>,
         b: Region<'tcx>,
@@ -760,7 +722,7 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
 
     pub fn glb_regions(
         &mut self,
-        tcx: TyCtxt<'_, '_, 'tcx>,
+        tcx: TyCtxt<'tcx>,
         origin: SubregionOrigin<'tcx>,
         a: Region<'tcx>,
         b: Region<'tcx>,
@@ -782,7 +744,7 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
 
     pub fn opportunistic_resolve_var(
         &mut self,
-        tcx: TyCtxt<'_, '_, 'tcx>,
+        tcx: TyCtxt<'tcx>,
         rid: RegionVid,
     ) -> ty::Region<'tcx> {
         let vid = self.unification_table.probe_value(rid).min_vid;
@@ -798,7 +760,7 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
 
     fn combine_vars(
         &mut self,
-        tcx: TyCtxt<'_, '_, 'tcx>,
+        tcx: TyCtxt<'tcx>,
         t: CombineMapType,
         a: Region<'tcx>,
         b: Region<'tcx>,
@@ -887,8 +849,8 @@ impl<'tcx> fmt::Display for GenericKind<'tcx> {
     }
 }
 
-impl<'a, 'gcx, 'tcx> GenericKind<'tcx> {
-    pub fn to_ty(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> Ty<'tcx> {
+impl<'tcx> GenericKind<'tcx> {
+    pub fn to_ty(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
         match *self {
             GenericKind::Param(ref p) => p.to_ty(tcx),
             GenericKind::Projection(ref p) => tcx.mk_projection(p.item_def_id, p.substs),
@@ -896,7 +858,7 @@ impl<'a, 'gcx, 'tcx> GenericKind<'tcx> {
     }
 }
 
-impl<'a, 'gcx, 'tcx> VerifyBound<'tcx> {
+impl<'tcx> VerifyBound<'tcx> {
     pub fn must_hold(&self) -> bool {
         match self {
             VerifyBound::IfEq(..) => false,

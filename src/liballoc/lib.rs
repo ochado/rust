@@ -79,7 +79,7 @@
 #![feature(coerce_unsized)]
 #![feature(dispatch_from_dyn)]
 #![feature(core_intrinsics)]
-#![feature(custom_attribute)]
+#![cfg_attr(bootstrap, feature(custom_attribute))]
 #![feature(dropck_eyepatch)]
 #![feature(exact_size_is_empty)]
 #![feature(fmt_internals)]
@@ -87,7 +87,6 @@
 #![feature(fundamental)]
 #![feature(lang_items)]
 #![feature(libc)]
-#![feature(needs_allocator)]
 #![feature(nll)]
 #![feature(optin_builtin_traits)]
 #![feature(pattern)]
@@ -110,10 +109,9 @@
 #![feature(rustc_const_unstable)]
 #![feature(const_vec_new)]
 #![feature(slice_partition_dedup)]
-#![feature(maybe_uninit, maybe_uninit_slice, maybe_uninit_array)]
+#![feature(maybe_uninit_extra, maybe_uninit_slice, maybe_uninit_array)]
 #![feature(alloc_layout_extra)]
 #![feature(try_trait)]
-#![feature(iter_nth_back)]
 
 // Allow testing this library
 
@@ -143,7 +141,7 @@ mod boxed {
     pub use std::boxed::Box;
 }
 #[cfg(test)]
-mod boxed_test;
+mod tests;
 pub mod collections;
 #[cfg(all(target_has_atomic = "ptr", target_has_atomic = "cas"))]
 pub mod sync;

@@ -95,6 +95,9 @@ pub fn link_binary<'a, B: ArchiveBuilder<'a>>(sess: &'a Session,
                     );
                 }
             }
+            if sess.opts.debugging_opts.emit_artifact_notifications {
+                sess.parse_sess.span_diagnostic.emit_artifact_notification(&out_filename, "link");
+            }
         }
 
         if sess.opts.cg.save_temps {
@@ -1017,12 +1020,10 @@ fn link_args<'a, B: ArchiveBuilder<'a>>(cmd: &mut dyn Linker,
         }
     }
 
-    // If we're building a dynamic library then some platforms need to make sure
-    // that all symbols are exported correctly from the dynamic library.
-    if crate_type != config::CrateType::Executable ||
-       sess.target.target.options.is_like_emscripten {
-        cmd.export_symbols(tmpdir, crate_type);
-    }
+    // If we're building something like a dynamic library then some platforms
+    // need to make sure that all symbols are exported correctly from the
+    // dynamic library.
+    cmd.export_symbols(tmpdir, crate_type);
 
     // When linking a dynamic library, we put the metadata into a section of the
     // executable. This metadata is in a separate object file from the main
@@ -1126,10 +1127,10 @@ fn link_args<'a, B: ArchiveBuilder<'a>>(cmd: &mut dyn Linker,
     // For this reason, we have organized the arguments we pass to the linker as
     // such:
     //
-    //  1. The local object that LLVM just generated
-    //  2. Local native libraries
-    //  3. Upstream rust libraries
-    //  4. Upstream native libraries
+    // 1. The local object that LLVM just generated
+    // 2. Local native libraries
+    // 3. Upstream rust libraries
+    // 4. Upstream native libraries
     //
     // The rationale behind this ordering is that those items lower down in the
     // list can't depend on items higher up in the list. For example nothing can

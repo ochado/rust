@@ -1,5 +1,5 @@
 use crate::hir::def_id::DefId;
-use crate::util::nodemap::{NodeMap, DefIdMap};
+use crate::util::nodemap::DefIdMap;
 use syntax::ast;
 use syntax::ext::base::MacroKind;
 use syntax::ast::NodeId;
@@ -61,9 +61,9 @@ pub enum DefKind {
     TyAlias,
     ForeignTy,
     TraitAlias,
-    AssociatedTy,
+    AssocTy,
     /// `existential type Foo: Bar;`
-    AssociatedExistential,
+    AssocExistential,
     TyParam,
 
     // Value namespace
@@ -74,7 +74,7 @@ pub enum DefKind {
     /// Refers to the struct or enum variant's constructor.
     Ctor(CtorOf, CtorKind),
     Method,
-    AssociatedConst,
+    AssocConst,
 
     // Macro namespace
     Macro(MacroKind),
@@ -99,14 +99,14 @@ impl DefKind {
             DefKind::Existential => "existential type",
             DefKind::TyAlias => "type alias",
             DefKind::TraitAlias => "trait alias",
-            DefKind::AssociatedTy => "associated type",
-            DefKind::AssociatedExistential => "associated existential type",
+            DefKind::AssocTy => "associated type",
+            DefKind::AssocExistential => "associated existential type",
             DefKind::Union => "union",
             DefKind::Trait => "trait",
             DefKind::ForeignTy => "foreign type",
             DefKind::Method => "method",
             DefKind::Const => "constant",
-            DefKind::AssociatedConst => "associated constant",
+            DefKind::AssocConst => "associated constant",
             DefKind::TyParam => "type parameter",
             DefKind::ConstParam => "const parameter",
             DefKind::Macro(macro_kind) => macro_kind.descr(),
@@ -116,9 +116,9 @@ impl DefKind {
     /// An English article for the def.
     pub fn article(&self) -> &'static str {
         match *self {
-            DefKind::AssociatedTy
-            | DefKind::AssociatedConst
-            | DefKind::AssociatedExistential
+            DefKind::AssocTy
+            | DefKind::AssocConst
+            | DefKind::AssocExistential
             | DefKind::Enum
             | DefKind::Existential => "an",
             DefKind::Macro(macro_kind) => macro_kind.article(),
@@ -139,10 +139,6 @@ pub enum Res<Id = hir::HirId> {
     // Value namespace
     SelfCtor(DefId /* impl */),  // `DefId` refers to the impl
     Local(Id),
-    Upvar(Id,           // `HirId` of closed over local
-          usize,        // index in the `freevars` list of the closure
-          ast::NodeId), // expr node that creates the closure
-    Label(ast::NodeId),
 
     // Macro namespace
     NonMacroAttr(NonMacroAttrKind), // e.g., `#[inline]` or `#[rustfmt::skip]`
@@ -151,7 +147,9 @@ pub enum Res<Id = hir::HirId> {
     Err,
 }
 
-/// The result of resolving a path before lowering to HIR.
+/// The result of resolving a path before lowering to HIR,
+/// with "module" segments resolved and associated item
+/// segments deferred to type checking.
 /// `base_res` is the resolution of the resolved part of the
 /// path, `unresolved_segments` is the number of unresolved
 /// segments.
@@ -166,19 +164,21 @@ pub enum Res<Id = hir::HirId> {
 ///       base_res        unresolved_segments = 2
 /// ```
 #[derive(Copy, Clone, Debug)]
-pub struct PathResolution {
+pub struct PartialRes {
     base_res: Res<NodeId>,
     unresolved_segments: usize,
 }
 
-impl PathResolution {
-    pub fn new(res: Res<NodeId>) -> Self {
-        PathResolution { base_res: res, unresolved_segments: 0 }
+impl PartialRes {
+    #[inline]
+    pub fn new(base_res: Res<NodeId>) -> Self {
+        PartialRes { base_res, unresolved_segments: 0 }
     }
 
-    pub fn with_unresolved_segments(res: Res<NodeId>, mut unresolved_segments: usize) -> Self {
-        if res == Res::Err { unresolved_segments = 0 }
-        PathResolution { base_res: res, unresolved_segments: unresolved_segments }
+    #[inline]
+    pub fn with_unresolved_segments(base_res: Res<NodeId>, mut unresolved_segments: usize) -> Self {
+        if base_res == Res::Err { unresolved_segments = 0 }
+        PartialRes { base_res, unresolved_segments }
     }
 
     #[inline]
@@ -269,16 +269,9 @@ impl<T> PerNS<Option<T>> {
     }
 }
 
-/// Definition mapping
-pub type ResMap = NodeMap<PathResolution>;
-
 /// This is the replacement export map. It maps a module to all of the exports
 /// within.
 pub type ExportMap<Id> = DefIdMap<Vec<Export<Id>>>;
-
-/// Map used to track the `use` statements within a scope, matching it with all the items in every
-/// namespace.
-pub type ImportMap = NodeMap<PerNS<Option<PathResolution>>>;
 
 #[derive(Copy, Clone, Debug, RustcEncodable, RustcDecodable, HashStable)]
 pub struct Export<Id> {
@@ -351,8 +344,6 @@ impl<Id> Res<Id> {
             Res::Def(_, id) => Some(id),
 
             Res::Local(..) |
-            Res::Upvar(..) |
-            Res::Label(..)  |
             Res::PrimTy(..) |
             Res::SelfTy(..) |
             Res::SelfCtor(..) |
@@ -373,14 +364,12 @@ impl<Id> Res<Id> {
     }
 
     /// A human readable name for the res kind ("function", "module", etc.).
-    pub fn kind_name(&self) -> &'static str {
+    pub fn descr(&self) -> &'static str {
         match *self {
             Res::Def(kind, _) => kind.descr(),
             Res::SelfCtor(..) => "self constructor",
             Res::PrimTy(..) => "builtin type",
             Res::Local(..) => "local variable",
-            Res::Upvar(..) => "closure capture",
-            Res::Label(..) => "label",
             Res::SelfTy(..) => "self type",
             Res::ToolMod => "tool module",
             Res::NonMacroAttr(attr_kind) => attr_kind.descr(),
@@ -403,12 +392,6 @@ impl<Id> Res<Id> {
             Res::SelfCtor(id) => Res::SelfCtor(id),
             Res::PrimTy(id) => Res::PrimTy(id),
             Res::Local(id) => Res::Local(map(id)),
-            Res::Upvar(id, index, closure) => Res::Upvar(
-                map(id),
-                index,
-                closure
-            ),
-            Res::Label(id) => Res::Label(id),
             Res::SelfTy(a, b) => Res::SelfTy(a, b),
             Res::ToolMod => Res::ToolMod,
             Res::NonMacroAttr(attr_kind) => Res::NonMacroAttr(attr_kind),

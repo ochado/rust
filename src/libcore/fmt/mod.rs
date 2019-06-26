@@ -886,7 +886,7 @@ pub trait Pointer {
 ///
 /// # Examples
 ///
-/// Basic usage with `i32`:
+/// Basic usage with `f64`:
 ///
 /// ```
 /// let x = 42.0; // 42.0 is '4.2e1' in scientific notation
@@ -929,7 +929,7 @@ pub trait LowerExp {
 ///
 /// # Examples
 ///
-/// Basic usage with `f32`:
+/// Basic usage with `f64`:
 ///
 /// ```
 /// let x = 42.0; // 42.0 is '4.2E1' in scientific notation
@@ -2070,19 +2070,19 @@ macro_rules! tuple {
     () => ();
     ( $($name:ident,)+ ) => (
         #[stable(feature = "rust1", since = "1.0.0")]
-        impl<$($name:Debug),*> Debug for ($($name,)*) where last_type!($($name,)+): ?Sized {
+        impl<$($name:Debug),+> Debug for ($($name,)+) where last_type!($($name,)+): ?Sized {
             #[allow(non_snake_case, unused_assignments)]
             fn fmt(&self, f: &mut Formatter<'_>) -> Result {
                 let mut builder = f.debug_tuple("");
-                let ($(ref $name,)*) = *self;
+                let ($(ref $name,)+) = *self;
                 $(
                     builder.field(&$name);
-                )*
+                )+
 
                 builder.finish()
             }
         }
-        peel! { $($name,)* }
+        peel! { $($name,)+ }
     )
 }
 

@@ -4,7 +4,7 @@ use rustc::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc::ty::query::Providers;
 use rustc::ty::subst::UnpackedKind;
 use rustc::ty::{self, CratePredicatesMap, TyCtxt};
-use rustc_data_structures::sync::Lrc;
+use syntax::symbol::sym;
 
 mod explicit;
 mod implicit_infer;
@@ -20,8 +20,8 @@ pub fn provide(providers: &mut Providers<'_>) {
     };
 }
 
-fn inferred_outlives_of<'a, 'tcx>(
-    tcx: TyCtxt<'a, 'tcx, 'tcx>,
+fn inferred_outlives_of<'tcx>(
+    tcx: TyCtxt<'tcx>,
     item_def_id: DefId,
 ) -> &'tcx [ty::Predicate<'tcx>] {
     let id = tcx
@@ -29,7 +29,7 @@ fn inferred_outlives_of<'a, 'tcx>(
         .as_local_hir_id(item_def_id)
         .expect("expected local def-id");
 
-    match tcx.hir().get_by_hir_id(id) {
+    match tcx.hir().get(id) {
         Node::Item(item) => match item.node {
             hir::ItemKind::Struct(..) | hir::ItemKind::Enum(..) | hir::ItemKind::Union(..) => {
                 let crate_map = tcx.inferred_outlives_crate(LOCAL_CRATE);
@@ -40,7 +40,7 @@ fn inferred_outlives_of<'a, 'tcx>(
                     .map(|p| *p)
                     .unwrap_or(&[]);
 
-                if tcx.has_attr(item_def_id, "rustc_outlives") {
+                if tcx.has_attr(item_def_id, sym::rustc_outlives) {
                     let mut pred: Vec<String> = predicates
                         .iter()
                         .map(|out_pred| match out_pred {
@@ -71,9 +71,9 @@ fn inferred_outlives_of<'a, 'tcx>(
 }
 
 fn inferred_outlives_crate<'tcx>(
-    tcx: TyCtxt<'_, 'tcx, 'tcx>,
+    tcx: TyCtxt<'tcx>,
     crate_num: CrateNum,
-) -> Lrc<CratePredicatesMap<'tcx>> {
+) -> &'tcx CratePredicatesMap<'tcx> {
     assert_eq!(crate_num, LOCAL_CRATE);
 
     // Compute a map from each struct/enum/union S to the **explicit**
@@ -119,7 +119,7 @@ fn inferred_outlives_crate<'tcx>(
             (def_id, &*predicates)
         }).collect();
 
-    Lrc::new(ty::CratePredicatesMap {
+    tcx.arena.alloc(ty::CratePredicatesMap {
         predicates,
     })
 }

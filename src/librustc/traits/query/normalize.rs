@@ -14,7 +14,7 @@ use crate::ty::{self, Ty, TyCtxt};
 
 use super::NoSolution;
 
-impl<'cx, 'gcx, 'tcx> At<'cx, 'gcx, 'tcx> {
+impl<'cx, 'tcx> At<'cx, 'tcx> {
     /// Normalize `value` in the context of the inference context,
     /// yielding a resulting type, or an error if `value` cannot be
     /// normalized. If you don't care about regions, you should prefer
@@ -73,8 +73,8 @@ pub struct NormalizationResult<'tcx> {
     pub normalized_ty: Ty<'tcx>,
 }
 
-struct QueryNormalizer<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
-    infcx: &'cx InferCtxt<'cx, 'gcx, 'tcx>,
+struct QueryNormalizer<'cx, 'tcx> {
+    infcx: &'cx InferCtxt<'cx, 'tcx>,
     cause: &'cx ObligationCause<'tcx>,
     param_env: ty::ParamEnv<'tcx>,
     obligations: Vec<PredicateObligation<'tcx>>,
@@ -82,8 +82,8 @@ struct QueryNormalizer<'cx, 'gcx: 'tcx, 'tcx: 'cx> {
     anon_depth: usize,
 }
 
-impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for QueryNormalizer<'cx, 'gcx, 'tcx> {
-    fn tcx<'c>(&'c self) -> TyCtxt<'c, 'gcx, 'tcx> {
+impl<'cx, 'tcx> TypeFolder<'tcx> for QueryNormalizer<'cx, 'tcx> {
+    fn tcx<'c>(&'c self) -> TyCtxt<'tcx> {
         self.infcx.tcx
     }
 
@@ -145,7 +145,9 @@ impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for QueryNormalizer<'cx, 'gcx, 'tcx
                 let gcx = self.infcx.tcx.global_tcx();
 
                 let mut orig_values = OriginalQueryValues::default();
-                let c_data = self.infcx.canonicalize_query(
+                // HACK(matthewjasper) `'static` is special-cased in selection,
+                // so we cannot canonicalize it.
+                let c_data = self.infcx.canonicalize_hr_query_hack(
                     &self.param_env.and(*data), &mut orig_values);
                 debug!("QueryNormalizer: c_data = {:#?}", c_data);
                 debug!("QueryNormalizer: orig_values = {:#?}", orig_values);
@@ -201,8 +203,6 @@ impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for QueryNormalizer<'cx, 'gcx, 'tcx
                             promoted: None,
                         };
                         if let Ok(evaluated) = tcx.const_eval(param_env.and(cid)) {
-                            let substs = tcx.lift_to_global(&substs).unwrap();
-                            let evaluated = tcx.mk_const(evaluated);
                             let evaluated = evaluated.subst(tcx, substs);
                             return evaluated;
                         }
@@ -216,7 +216,7 @@ impl<'cx, 'gcx, 'tcx> TypeFolder<'gcx, 'tcx> for QueryNormalizer<'cx, 'gcx, 'tcx
                                 promoted: None,
                             };
                             if let Ok(evaluated) = tcx.const_eval(param_env.and(cid)) {
-                                return tcx.mk_const(evaluated);
+                                return evaluated;
                             }
                         }
                     }

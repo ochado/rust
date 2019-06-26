@@ -12,7 +12,7 @@ use rustc::hir::itemlikevisit::ItemLikeVisitor;
 use super::terms::*;
 use super::terms::VarianceTerm::*;
 
-pub struct ConstraintContext<'a, 'tcx: 'a> {
+pub struct ConstraintContext<'a, 'tcx> {
     pub terms_cx: TermsContext<'a, 'tcx>,
 
     // These are pointers to common `ConstantTerm` instances
@@ -124,7 +124,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
         self.build_constraints_for_item(def_id);
     }
 
-    fn tcx(&self) -> TyCtxt<'a, 'tcx, 'tcx> {
+    fn tcx(&self) -> TyCtxt<'tcx> {
         self.terms_cx.tcx
     }
 
@@ -324,7 +324,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
             ty::Param(ref data) => {
-                self.add_constraint(current, data.idx, variance);
+                self.add_constraint(current, data.index, variance);
             }
 
             ty::FnPtr(sig) => {

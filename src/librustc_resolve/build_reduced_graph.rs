@@ -37,7 +37,7 @@ use syntax::feature_gate::is_builtin_attr;
 use syntax::parse::token::{self, Token};
 use syntax::span_err;
 use syntax::std_inject::injected_crate_name;
-use syntax::symbol::keywords;
+use syntax::symbol::{kw, sym};
 use syntax::visit::{self, Visitor};
 
 use syntax_pos::{Span, DUMMY_SP};
@@ -143,7 +143,7 @@ impl<'a> Resolver<'a> {
             }
             _ => None,
         }.map(|ctxt| Segment::from_ident(Ident::new(
-            keywords::PathRoot.name(), use_tree.prefix.span.shrink_to_lo().with_ctxt(ctxt)
+            kw::PathRoot, use_tree.prefix.span.shrink_to_lo().with_ctxt(ctxt)
         )));
 
         let prefix = crate_root.into_iter().chain(prefix_iter).collect::<Vec<_>>();
@@ -151,7 +151,7 @@ impl<'a> Resolver<'a> {
 
         let empty_for_self = |prefix: &[Segment]| {
             prefix.is_empty() ||
-            prefix.len() == 1 && prefix[0].ident.name == keywords::PathRoot.name()
+            prefix.len() == 1 && prefix[0].ident.name == kw::PathRoot
         };
         match use_tree.kind {
             ast::UseTreeKind::Simple(rename, ..) => {
@@ -162,7 +162,7 @@ impl<'a> Resolver<'a> {
 
                 if nested {
                     // Correctly handle `self`
-                    if source.ident.name == keywords::SelfLower.name() {
+                    if source.ident.name == kw::SelfLower {
                         type_ns_only = true;
 
                         if empty_for_self(&module_path) {
@@ -183,14 +183,14 @@ impl<'a> Resolver<'a> {
                     }
                 } else {
                     // Disallow `self`
-                    if source.ident.name == keywords::SelfLower.name() {
+                    if source.ident.name == kw::SelfLower {
                         resolve_error(self,
                                       use_tree.span,
                                       ResolutionError::SelfImportsOnlyAllowedWithin);
                     }
 
                     // Disallow `use $crate;`
-                    if source.ident.name == keywords::DollarCrate.name() && module_path.is_empty() {
+                    if source.ident.name == kw::DollarCrate && module_path.is_empty() {
                         let crate_root = self.resolve_crate_root(source.ident);
                         let crate_name = match crate_root.kind {
                             ModuleKind::Def(.., name) => name,
@@ -199,11 +199,11 @@ impl<'a> Resolver<'a> {
                         // HACK(eddyb) unclear how good this is, but keeping `$crate`
                         // in `source` breaks `src/test/compile-fail/import-crate-var.rs`,
                         // while the current crate doesn't have a valid `crate_name`.
-                        if crate_name != keywords::Invalid.name() {
+                        if crate_name != kw::Invalid {
                             // `crate_name` should not be interpreted as relative.
                             module_path.push(Segment {
                                 ident: Ident {
-                                    name: keywords::PathRoot.name(),
+                                    name: kw::PathRoot,
                                     span: source.ident.span,
                                 },
                                 id: Some(self.session.next_node_id()),
@@ -221,7 +221,7 @@ impl<'a> Resolver<'a> {
                     }
                 }
 
-                if ident.name == keywords::Crate.name() {
+                if ident.name == kw::Crate {
                     self.session.span_err(ident.span,
                         "crate root imports need to be explicitly named: \
                          `use crate as name;`");
@@ -257,7 +257,7 @@ impl<'a> Resolver<'a> {
             }
             ast::UseTreeKind::Glob => {
                 let subclass = GlobImport {
-                    is_prelude: attr::contains_name(&item.attrs, "prelude_import"),
+                    is_prelude: attr::contains_name(&item.attrs, sym::prelude_import),
                     max_vis: Cell::new(ty::Visibility::Invisible),
                 };
                 self.add_import_directive(
@@ -276,7 +276,7 @@ impl<'a> Resolver<'a> {
                 // Ensure there is at most one `self` in the list
                 let self_spans = items.iter().filter_map(|&(ref use_tree, _)| {
                     if let ast::UseTreeKind::Simple(..) = use_tree.kind {
-                        if use_tree.ident().name == keywords::SelfLower.name() {
+                        if use_tree.ident().name == kw::SelfLower {
                             return Some(use_tree.span);
                         }
                     }
@@ -305,16 +305,16 @@ impl<'a> Resolver<'a> {
                 }
 
                 // Empty groups `a::b::{}` are turned into synthetic `self` imports
-                // `a::b::c::{self as __dummy}`, so that their prefixes are correctly
+                // `a::b::c::{self as _}`, so that their prefixes are correctly
                 // resolved and checked for privacy/stability/etc.
                 if items.is_empty() && !empty_for_self(&prefix) {
                     let new_span = prefix[prefix.len() - 1].ident.span;
                     let tree = ast::UseTree {
                         prefix: ast::Path::from_ident(
-                            Ident::new(keywords::SelfLower.name(), new_span)
+                            Ident::new(kw::SelfLower, new_span)
                         ),
                         kind: ast::UseTreeKind::Simple(
-                            Some(Ident::new(Name::gensym("__dummy"), new_span)),
+                            Some(Ident::new(kw::Underscore, new_span)),
                             ast::DUMMY_NODE_ID,
                             ast::DUMMY_NODE_ID,
                         ),
@@ -350,7 +350,7 @@ impl<'a> Resolver<'a> {
             }
 
             ItemKind::ExternCrate(orig_name) => {
-                let module = if orig_name.is_none() && ident.name == keywords::SelfLower.name() {
+                let module = if orig_name.is_none() && ident.name == kw::SelfLower {
                     self.session
                         .struct_span_err(item.span, "`extern crate self;` requires renaming")
                         .span_suggestion(
@@ -361,7 +361,7 @@ impl<'a> Resolver<'a> {
                         )
                         .emit();
                     return;
-                } else if orig_name == Some(keywords::SelfLower.name()) {
+                } else if orig_name == Some(kw::SelfLower) {
                     self.graph_root
                 } else {
                     let crate_id = self.crate_loader.process_extern_crate(item, &self.definitions);
@@ -369,7 +369,7 @@ impl<'a> Resolver<'a> {
                 };
 
                 self.populate_module_if_necessary(module);
-                if injected_crate_name().map_or(false, |name| ident.name == name) {
+                if injected_crate_name().map_or(false, |name| ident.name.as_str() == name) {
                     self.injected_crate = Some(module);
                 }
 
@@ -420,14 +420,14 @@ impl<'a> Resolver<'a> {
 
             ItemKind::GlobalAsm(..) => {}
 
-            ItemKind::Mod(..) if ident == keywords::Invalid.ident() => {} // Crate root
+            ItemKind::Mod(..) if ident.name == kw::Invalid => {} // Crate root
 
             ItemKind::Mod(..) => {
                 let def_id = self.definitions.local_def_id(item.id);
                 let module_kind = ModuleKind::Def(DefKind::Mod, def_id, ident.name);
                 let module = self.arenas.alloc_module(ModuleData {
                     no_implicit_prelude: parent.no_implicit_prelude || {
-                        attr::contains_name(&item.attrs, "no_implicit_prelude")
+                        attr::contains_name(&item.attrs, sym::no_implicit_prelude)
                     },
                     ..ModuleData::new(Some(parent), module_kind, def_id, expansion, item.span)
                 });
@@ -456,12 +456,12 @@ impl<'a> Resolver<'a> {
 
                 // Functions introducing procedural macros reserve a slot
                 // in the macro namespace as well (see #52225).
-                if attr::contains_name(&item.attrs, "proc_macro") ||
-                   attr::contains_name(&item.attrs, "proc_macro_attribute") {
+                if attr::contains_name(&item.attrs, sym::proc_macro) ||
+                   attr::contains_name(&item.attrs, sym::proc_macro_attribute) {
                     let res = Res::Def(DefKind::Macro(MacroKind::ProcMacroStub), res.def_id());
                     self.define(parent, ident, MacroNS, (res, vis, sp, expansion));
                 }
-                if let Some(attr) = attr::find_by_name(&item.attrs, "proc_macro_derive") {
+                if let Some(attr) = attr::find_by_name(&item.attrs, sym::proc_macro_derive) {
                     if let Some(trait_attr) =
                             attr.meta_item_list().and_then(|list| list.get(0).cloned()) {
                         if let Some(ident) = trait_attr.ident() {
@@ -518,7 +518,7 @@ impl<'a> Resolver<'a> {
 
                 let mut ctor_vis = vis;
 
-                let has_non_exhaustive = attr::contains_name(&item.attrs, "non_exhaustive");
+                let has_non_exhaustive = attr::contains_name(&item.attrs, sym::non_exhaustive);
 
                 // If the structure is marked as non_exhaustive then lower the visibility
                 // to within the crate.
@@ -599,7 +599,7 @@ impl<'a> Resolver<'a> {
         // If the variant is marked as non_exhaustive then lower the visibility to within the
         // crate.
         let mut ctor_vis = vis;
-        let has_non_exhaustive = attr::contains_name(&variant.node.attrs, "non_exhaustive");
+        let has_non_exhaustive = attr::contains_name(&variant.node.attrs, sym::non_exhaustive);
         if has_non_exhaustive && vis == ty::Visibility::Public {
             ctor_vis = ty::Visibility::Restricted(DefId::local(CRATE_DEF_INDEX));
         }
@@ -705,7 +705,7 @@ impl<'a> Resolver<'a> {
 
                 for child in self.cstore.item_children_untracked(def_id, self.session) {
                     let res = child.res.map_id(|_| panic!("unexpected id"));
-                    let ns = if let Res::Def(DefKind::AssociatedTy, _) = res {
+                    let ns = if let Res::Def(DefKind::AssocTy, _) = res {
                         TypeNS
                     } else { ValueNS };
                     self.define(module, child.ident, ns,
@@ -772,9 +772,8 @@ impl<'a> Resolver<'a> {
     pub fn get_macro(&mut self, res: Res) -> Lrc<SyntaxExtension> {
         let def_id = match res {
             Res::Def(DefKind::Macro(..), def_id) => def_id,
-            Res::NonMacroAttr(attr_kind) => return Lrc::new(SyntaxExtension::NonMacroAttr {
-                mark_used: attr_kind == NonMacroAttrKind::Tool,
-            }),
+            Res::NonMacroAttr(attr_kind) =>
+                return self.non_macro_attr(attr_kind == NonMacroAttrKind::Tool),
             _ => panic!("expected `DefKind::Macro` or `Res::NonMacroAttr`"),
         };
         if let Some(ext) = self.macro_map.get(&def_id) {
@@ -825,13 +824,13 @@ impl<'a> Resolver<'a> {
         let mut import_all = None;
         let mut single_imports = Vec::new();
         for attr in &item.attrs {
-            if attr.check_name("macro_use") {
+            if attr.check_name(sym::macro_use) {
                 if self.current_module.parent.is_some() {
                     span_err!(self.session, item.span, E0468,
                         "an `extern crate` loading macros must be at the crate root");
                 }
                 if let ItemKind::ExternCrate(Some(orig_name)) = item.node {
-                    if orig_name == keywords::SelfLower.name() {
+                    if orig_name == kw::SelfLower {
                         self.session.span_err(attr.span,
                             "`macro_use` is not supported on `extern crate self`");
                     }
@@ -908,7 +907,7 @@ impl<'a> Resolver<'a> {
     /// Returns `true` if this attribute list contains `macro_use`.
     fn contains_macro_use(&mut self, attrs: &[ast::Attribute]) -> bool {
         for attr in attrs {
-            if attr.check_name("macro_escape") {
+            if attr.check_name(sym::macro_escape) {
                 let msg = "macro_escape is a deprecated synonym for macro_use";
                 let mut err = self.session.struct_span_warn(attr.span, msg);
                 if let ast::AttrStyle::Inner = attr.style {
@@ -916,7 +915,7 @@ impl<'a> Resolver<'a> {
                 } else {
                     err.emit();
                 }
-            } else if !attr.check_name("macro_use") {
+            } else if !attr.check_name(sym::macro_use) {
                 continue;
             }
 
@@ -930,7 +929,7 @@ impl<'a> Resolver<'a> {
     }
 }
 
-pub struct BuildReducedGraphVisitor<'a, 'b: 'a> {
+pub struct BuildReducedGraphVisitor<'a, 'b> {
     pub resolver: &'a mut Resolver<'b>,
     pub current_legacy_scope: LegacyScope<'b>,
     pub expansion: Mark,
@@ -1033,14 +1032,14 @@ impl<'a, 'b> Visitor<'a> for BuildReducedGraphVisitor<'a, 'b> {
         // Add the item to the trait info.
         let item_def_id = self.resolver.definitions.local_def_id(item.id);
         let (res, ns) = match item.node {
-            TraitItemKind::Const(..) => (Res::Def(DefKind::AssociatedConst, item_def_id), ValueNS),
+            TraitItemKind::Const(..) => (Res::Def(DefKind::AssocConst, item_def_id), ValueNS),
             TraitItemKind::Method(ref sig, _) => {
                 if sig.decl.has_self() {
                     self.resolver.has_self.insert(item_def_id);
                 }
                 (Res::Def(DefKind::Method, item_def_id), ValueNS)
             }
-            TraitItemKind::Type(..) => (Res::Def(DefKind::AssociatedTy, item_def_id), TypeNS),
+            TraitItemKind::Type(..) => (Res::Def(DefKind::AssocTy, item_def_id), TypeNS),
             TraitItemKind::Macro(_) => bug!(),  // handled above
         };
 
@@ -1053,7 +1052,7 @@ impl<'a, 'b> Visitor<'a> for BuildReducedGraphVisitor<'a, 'b> {
     }
 
     fn visit_token(&mut self, t: Token) {
-        if let Token::Interpolated(nt) = t {
+        if let token::Interpolated(nt) = t.kind {
             if let token::NtExpr(ref expr) = *nt {
                 if let ast::ExprKind::Mac(..) = expr.node {
                     self.visit_invoc(expr.id);

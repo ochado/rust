@@ -6,16 +6,16 @@
 #[stable(feature = "core", since = "1.6.0")]
 macro_rules! panic {
     () => (
-        panic!("explicit panic")
+        $crate::panic!("explicit panic")
     );
     ($msg:expr) => ({
         $crate::panicking::panic(&($msg, file!(), line!(), __rust_unstable_column!()))
     });
     ($msg:expr,) => (
-        panic!($msg)
+        $crate::panic!($msg)
     );
     ($fmt:expr, $($arg:tt)+) => ({
-        $crate::panicking::panic_fmt(format_args!($fmt, $($arg)*),
+        $crate::panicking::panic_fmt(format_args!($fmt, $($arg)+),
                                      &(file!(), line!(), __rust_unstable_column!()))
     });
 }
@@ -58,7 +58,7 @@ macro_rules! assert_eq {
         }
     });
     ($left:expr, $right:expr,) => ({
-        assert_eq!($left, $right)
+        $crate::assert_eq!($left, $right)
     });
     ($left:expr, $right:expr, $($arg:tt)+) => ({
         match (&($left), &($right)) {
@@ -115,7 +115,7 @@ macro_rules! assert_ne {
         }
     });
     ($left:expr, $right:expr,) => {
-        assert_ne!($left, $right)
+        $crate::assert_ne!($left, $right)
     };
     ($left:expr, $right:expr, $($arg:tt)+) => ({
         match (&($left), &($right)) {
@@ -208,7 +208,7 @@ macro_rules! debug_assert {
 #[macro_export]
 #[stable(feature = "rust1", since = "1.0.0")]
 macro_rules! debug_assert_eq {
-    ($($arg:tt)*) => (if cfg!(debug_assertions) { assert_eq!($($arg)*); })
+    ($($arg:tt)*) => (if cfg!(debug_assertions) { $crate::assert_eq!($($arg)*); })
 }
 
 /// Asserts that two expressions are not equal to each other.
@@ -235,7 +235,7 @@ macro_rules! debug_assert_eq {
 #[macro_export]
 #[stable(feature = "assert_ne", since = "1.13.0")]
 macro_rules! debug_assert_ne {
-    ($($arg:tt)*) => (if cfg!(debug_assertions) { assert_ne!($($arg)*); })
+    ($($arg:tt)*) => (if cfg!(debug_assertions) { $crate::assert_ne!($($arg)*); })
 }
 
 /// Unwraps a result or propagates its error.
@@ -310,7 +310,7 @@ macro_rules! r#try {
             return $crate::result::Result::Err($crate::convert::From::from(err))
         }
     });
-    ($expr:expr,) => (r#try!($expr));
+    ($expr:expr,) => ($crate::r#try!($expr));
 }
 
 /// Writes formatted data into a buffer.
@@ -425,10 +425,10 @@ macro_rules! write {
 #[allow_internal_unstable(format_args_nl)]
 macro_rules! writeln {
     ($dst:expr) => (
-        write!($dst, "\n")
+        $crate::write!($dst, "\n")
     );
     ($dst:expr,) => (
-        writeln!($dst)
+        $crate::writeln!($dst)
     );
     ($dst:expr, $($arg:tt)*) => (
         $dst.write_fmt(format_args_nl!($($arg)*))
@@ -445,9 +445,10 @@ macro_rules! writeln {
 /// * Iterators that dynamically terminate.
 ///
 /// If the determination that the code is unreachable proves incorrect, the
-/// program immediately terminates with a [`panic!`]. The function [`unreachable_unchecked`],
-/// which belongs to the [`std::hint`] module, informs the compiler to
-/// optimize the code out of the release version entirely.
+/// program immediately terminates with a [`panic!`].
+///
+/// The unsafe counterpart of this macro is the [`unreachable_unchecked`] function, which
+/// will cause undefined behavior if the code is reached.
 ///
 /// [`panic!`]:  ../std/macro.panic.html
 /// [`unreachable_unchecked`]: ../std/hint/fn.unreachable_unchecked.html
@@ -493,10 +494,10 @@ macro_rules! unreachable {
         panic!("internal error: entered unreachable code")
     });
     ($msg:expr) => ({
-        unreachable!("{}", $msg)
+        $crate::unreachable!("{}", $msg)
     });
     ($msg:expr,) => ({
-        unreachable!($msg)
+        $crate::unreachable!($msg)
     });
     ($fmt:expr, $($arg:tt)*) => ({
         panic!(concat!("internal error: entered unreachable code: ", $fmt), $($arg)*)
@@ -557,7 +558,7 @@ macro_rules! unreachable {
 #[stable(feature = "rust1", since = "1.0.0")]
 macro_rules! unimplemented {
     () => (panic!("not yet implemented"));
-    ($($arg:tt)+) => (panic!("not yet implemented: {}", format_args!($($arg)*)));
+    ($($arg:tt)+) => (panic!("not yet implemented: {}", format_args!($($arg)+)));
 }
 
 /// Indicates unfinished code.
@@ -616,7 +617,7 @@ macro_rules! unimplemented {
 #[unstable(feature = "todo_macro", issue = "59277")]
 macro_rules! todo {
     () => (panic!("not yet implemented"));
-    ($($arg:tt)+) => (panic!("not yet implemented: {}", format_args!($($arg)*)));
+    ($($arg:tt)+) => (panic!("not yet implemented: {}", format_args!($($arg)+)));
 }
 
 /// Creates an array of [`MaybeUninit`].

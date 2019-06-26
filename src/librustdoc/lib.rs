@@ -1,5 +1,6 @@
 #![deny(rust_2018_idioms)]
 #![deny(internal)]
+#![deny(unused_lifetimes)]
 
 #![doc(html_root_url = "https://doc.rust-lang.org/nightly/",
        html_playground_url = "https://play.rust-lang.org/")]
@@ -58,6 +59,7 @@ mod externalfiles;
 mod clean;
 mod config;
 mod core;
+mod docfs;
 mod doctree;
 mod fold;
 pub mod html {
@@ -94,9 +96,7 @@ pub fn main() {
     rustc_driver::set_sigpipe_handler();
     env_logger::init();
     let res = std::thread::Builder::new().stack_size(thread_stack_size).spawn(move || {
-        rustc_interface::interface::default_thread_pool(move || {
-            get_args().map(|args| main_args(&args)).unwrap_or(1)
-        })
+        get_args().map(|args| main_args(&args)).unwrap_or(1)
     }).unwrap().join().unwrap_or(rustc_driver::EXIT_FAILURE);
     process::exit(res);
 }
@@ -382,7 +382,12 @@ fn main_args(args: &[String]) -> i32 {
         Ok(opts) => opts,
         Err(code) => return code,
     };
+    rustc_interface::interface::default_thread_pool(options.edition, move || {
+        main_options(options)
+    })
+}
 
+fn main_options(options: config::Options) -> i32 {
     let diag = core::new_handler(options.error_format,
                                  None,
                                  options.debugging_options.treat_err_as_bug,
@@ -391,7 +396,10 @@ fn main_args(args: &[String]) -> i32 {
     match (options.should_test, options.markdown_input()) {
         (true, true) => return markdown::test(options, &diag),
         (true, false) => return test::run(options),
-        (false, true) => return markdown::render(options.input, options.render_options, &diag),
+        (false, true) => return markdown::render(options.input,
+                                                 options.render_options,
+                                                 &diag,
+                                                 options.edition),
         (false, false) => {}
     }
 
@@ -399,7 +407,8 @@ fn main_args(args: &[String]) -> i32 {
     // but we can't crates the Handler ahead of time because it's not Send
     let diag_opts = (options.error_format,
                      options.debugging_options.treat_err_as_bug,
-                     options.debugging_options.ui_testing);
+                     options.debugging_options.ui_testing,
+                     options.edition);
     let show_coverage = options.show_coverage;
     rust_input(options, move |out| {
         if show_coverage {
@@ -410,7 +419,7 @@ fn main_args(args: &[String]) -> i32 {
 
         let Output { krate, passes, renderinfo, renderopts } = out;
         info!("going to format");
-        let (error_format, treat_err_as_bug, ui_testing) = diag_opts;
+        let (error_format, treat_err_as_bug, ui_testing, edition) = diag_opts;
         let diag = core::new_handler(error_format, None, treat_err_as_bug, ui_testing);
         match html::render::run(
             krate,
@@ -418,6 +427,7 @@ fn main_args(args: &[String]) -> i32 {
             passes.into_iter().collect(),
             renderinfo,
             &diag,
+            edition,
         ) {
             Ok(_) => rustc_driver::EXIT_SUCCESS,
             Err(e) => {

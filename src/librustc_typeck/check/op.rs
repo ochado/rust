@@ -5,20 +5,21 @@ use super::method::MethodCallee;
 use rustc::ty::{self, Ty, TypeFoldable};
 use rustc::ty::TyKind::{Ref, Adt, FnDef, Str, Uint, Never, Tuple, Char, Array};
 use rustc::ty::adjustment::{Adjustment, Adjust, AllowTwoPhase, AutoBorrow, AutoBorrowMutability};
-use rustc::infer::type_variable::TypeVariableOrigin;
+use rustc::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use errors::{self,Applicability};
 use syntax_pos::Span;
 use syntax::ast::Ident;
 use rustc::hir;
 
-impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
+impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Checks a `a <op>= b`
-    pub fn check_binop_assign(&self,
-                              expr: &'gcx hir::Expr,
-                              op: hir::BinOp,
-                              lhs_expr: &'gcx hir::Expr,
-                              rhs_expr: &'gcx hir::Expr) -> Ty<'tcx>
-    {
+    pub fn check_binop_assign(
+        &self,
+        expr: &'tcx hir::Expr,
+        op: hir::BinOp,
+        lhs_expr: &'tcx hir::Expr,
+        rhs_expr: &'tcx hir::Expr,
+    ) -> Ty<'tcx> {
         let (lhs_ty, rhs_ty, return_ty) =
             self.check_overloaded_binop(expr, lhs_expr, rhs_expr, op, IsAssign::Yes);
 
@@ -43,12 +44,13 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     }
 
     /// Checks a potentially overloaded binary operator.
-    pub fn check_binop(&self,
-                       expr: &'gcx hir::Expr,
-                       op: hir::BinOp,
-                       lhs_expr: &'gcx hir::Expr,
-                       rhs_expr: &'gcx hir::Expr) -> Ty<'tcx>
-    {
+    pub fn check_binop(
+        &self,
+        expr: &'tcx hir::Expr,
+        op: hir::BinOp,
+        lhs_expr: &'tcx hir::Expr,
+        rhs_expr: &'tcx hir::Expr,
+    ) -> Ty<'tcx> {
         let tcx = self.tcx;
 
         debug!("check_binop(expr.hir_id={}, expr={:?}, op={:?}, lhs_expr={:?}, rhs_expr={:?})",
@@ -104,14 +106,14 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn enforce_builtin_binop_types(&self,
-                                   lhs_expr: &'gcx hir::Expr,
-                                   lhs_ty: Ty<'tcx>,
-                                   rhs_expr: &'gcx hir::Expr,
-                                   rhs_ty: Ty<'tcx>,
-                                   op: hir::BinOp)
-                                   -> Ty<'tcx>
-    {
+    fn enforce_builtin_binop_types(
+        &self,
+        lhs_expr: &'tcx hir::Expr,
+        lhs_ty: Ty<'tcx>,
+        rhs_expr: &'tcx hir::Expr,
+        rhs_ty: Ty<'tcx>,
+        op: hir::BinOp,
+    ) -> Ty<'tcx> {
         debug_assert!(is_builtin_binop(lhs_ty, rhs_ty, op));
 
         let tcx = self.tcx;
@@ -142,14 +144,14 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn check_overloaded_binop(&self,
-                              expr: &'gcx hir::Expr,
-                              lhs_expr: &'gcx hir::Expr,
-                              rhs_expr: &'gcx hir::Expr,
-                              op: hir::BinOp,
-                              is_assign: IsAssign)
-                              -> (Ty<'tcx>, Ty<'tcx>, Ty<'tcx>)
-    {
+    fn check_overloaded_binop(
+        &self,
+        expr: &'tcx hir::Expr,
+        lhs_expr: &'tcx hir::Expr,
+        rhs_expr: &'tcx hir::Expr,
+        op: hir::BinOp,
+        is_assign: IsAssign,
+    ) -> (Ty<'tcx>, Ty<'tcx>, Ty<'tcx>) {
         debug!("check_overloaded_binop(expr.hir_id={}, op={:?}, is_assign={:?})",
                expr.hir_id,
                op,
@@ -163,7 +165,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 // e.g., adding `&'a T` and `&'b T`, given `&'x T: Add<&'x T>`, will result
                 // in `&'a T <: &'x T` and `&'b T <: &'x T`, instead of `'a = 'b = 'x`.
                 let lhs_ty = self.check_expr_with_needs(lhs_expr, Needs::None);
-                let fresh_var = self.next_ty_var(TypeVariableOrigin::MiscVariable(lhs_expr.span));
+                let fresh_var = self.next_ty_var(TypeVariableOrigin {
+                    kind: TypeVariableOriginKind::MiscVariable,
+                    span: lhs_expr.span,
+                });
                 self.demand_coerce(lhs_expr, lhs_ty, fresh_var,  AllowTwoPhase::No)
             }
             IsAssign::Yes => {
@@ -182,7 +187,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // using this variable as the expected type, which sometimes lets
         // us do better coercions than we would be able to do otherwise,
         // particularly for things like `String + &String`.
-        let rhs_ty_var = self.next_ty_var(TypeVariableOrigin::MiscVariable(rhs_expr.span));
+        let rhs_ty_var = self.next_ty_var(TypeVariableOrigin {
+            kind: TypeVariableOriginKind::MiscVariable,
+            span: rhs_expr.span,
+        });
 
         let result = self.lookup_op_method(lhs_ty, &[rhs_ty_var], Op::Binary(op, is_assign));
 
@@ -305,8 +313,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                             };
                             if let Some(missing_trait) = missing_trait {
                                 if op.node == hir::BinOpKind::Add &&
-                                    self.check_str_addition(expr, lhs_expr, rhs_expr, lhs_ty,
-                                                            rhs_ty, &mut err, true, op) {
+                                    self.check_str_addition(
+                                        lhs_expr, rhs_expr, lhs_ty, rhs_ty, &mut err, true, op) {
                                     // This has nothing here because it means we did string
                                     // concatenation (e.g., "Hello " += "World!"). This means
                                     // we don't want the note in the else clause to be emitted
@@ -400,8 +408,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                             };
                             if let Some(missing_trait) = missing_trait {
                                 if op.node == hir::BinOpKind::Add &&
-                                    self.check_str_addition(expr, lhs_expr, rhs_expr, lhs_ty,
-                                                            rhs_ty, &mut err, false, op) {
+                                    self.check_str_addition(
+                                        lhs_expr, rhs_expr, lhs_ty, rhs_ty, &mut err, false, op) {
                                     // This has nothing here because it means we did string
                                     // concatenation (e.g., "Hello " + "World!"). This means
                                     // we don't want the note in the else clause to be emitted
@@ -502,11 +510,15 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         false
     }
 
+    /// Provide actionable suggestions when trying to add two strings with incorrect types,
+    /// like `&str + &str`, `String + String` and `&str + &String`.
+    ///
+    /// If this function returns `true` it means a note was printed, so we don't need
+    /// to print the normal "implementation of `std::ops::Add` might be missing" note
     fn check_str_addition(
         &self,
-        expr: &'gcx hir::Expr,
-        lhs_expr: &'gcx hir::Expr,
-        rhs_expr: &'gcx hir::Expr,
+        lhs_expr: &'tcx hir::Expr,
+        rhs_expr: &'tcx hir::Expr,
         lhs_ty: Ty<'tcx>,
         rhs_ty: Ty<'tcx>,
         err: &mut errors::DiagnosticBuilder<'_>,
@@ -514,45 +526,78 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         op: hir::BinOp,
     ) -> bool {
         let source_map = self.tcx.sess.source_map();
+        let remove_borrow_msg = "String concatenation appends the string on the right to the \
+                                 string on the left and may require reallocation. This \
+                                 requires ownership of the string on the left";
+
         let msg = "`to_owned()` can be used to create an owned `String` \
                    from a string reference. String concatenation \
                    appends the string on the right to the string \
                    on the left and may require reallocation. This \
                    requires ownership of the string on the left";
-        // If this function returns true it means a note was printed, so we don't need
-        // to print the normal "implementation of `std::ops::Add` might be missing" note
+
+        let is_std_string = |ty| &format!("{:?}", ty) == "std::string::String";
+
         match (&lhs_ty.sty, &rhs_ty.sty) {
-            (&Ref(_, l_ty, _), &Ref(_, r_ty, _))
-            if l_ty.sty == Str && r_ty.sty == Str => {
-                if !is_assign {
-                    err.span_label(op.span,
-                                   "`+` can't be used to concatenate two `&str` strings");
+            (&Ref(_, l_ty, _), &Ref(_, r_ty, _)) // &str or &String + &str, &String or &&str
+                if (l_ty.sty == Str || is_std_string(l_ty)) && (
+                        r_ty.sty == Str || is_std_string(r_ty) ||
+                        &format!("{:?}", rhs_ty) == "&&str"
+                    ) =>
+            {
+                if !is_assign { // Do not supply this message if `&str += &str`
+                    err.span_label(
+                        op.span,
+                        "`+` cannot be used to concatenate two `&str` strings",
+                    );
                     match source_map.span_to_snippet(lhs_expr.span) {
-                        Ok(lstring) => err.span_suggestion(
-                            lhs_expr.span,
-                            msg,
-                            format!("{}.to_owned()", lstring),
-                            Applicability::MachineApplicable,
-                        ),
+                        Ok(lstring) => {
+                            err.span_suggestion(
+                                lhs_expr.span,
+                                if lstring.starts_with("&") {
+                                    remove_borrow_msg
+                                } else {
+                                    msg
+                                },
+                                if lstring.starts_with("&") {
+                                    // let a = String::new();
+                                    // let _ = &a + "bar";
+                                    format!("{}", &lstring[1..])
+                                } else {
+                                    format!("{}.to_owned()", lstring)
+                                },
+                                Applicability::MachineApplicable,
+                            )
+                        }
                         _ => err.help(msg),
                     };
                 }
                 true
             }
-            (&Ref(_, l_ty, _), &Adt(..))
-            if l_ty.sty == Str && &format!("{:?}", rhs_ty) == "std::string::String" => {
-                err.span_label(expr.span,
-                    "`+` can't be used to concatenate a `&str` with a `String`");
+            (&Ref(_, l_ty, _), &Adt(..)) // Handle `&str` & `&String` + `String`
+                if (l_ty.sty == Str || is_std_string(l_ty)) && is_std_string(rhs_ty) =>
+            {
+                err.span_label(
+                    op.span,
+                    "`+` cannot be used to concatenate a `&str` with a `String`",
+                );
                 match (
                     source_map.span_to_snippet(lhs_expr.span),
                     source_map.span_to_snippet(rhs_expr.span),
                     is_assign,
                 ) {
                     (Ok(l), Ok(r), false) => {
+                        let to_string = if l.starts_with("&") {
+                            // let a = String::new(); let b = String::new();
+                            // let _ = &a + b;
+                            format!("{}", &l[1..])
+                        } else {
+                            format!("{}.to_owned()", l)
+                        };
                         err.multipart_suggestion(
                             msg,
                             vec![
-                                (lhs_expr.span, format!("{}.to_owned()", l)),
+                                (lhs_expr.span, to_string),
                                 (rhs_expr.span, format!("&{}", r)),
                             ],
                             Applicability::MachineApplicable,
@@ -568,12 +613,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         }
     }
 
-    pub fn check_user_unop(&self,
-                           ex: &'gcx hir::Expr,
-                           operand_ty: Ty<'tcx>,
-                           op: hir::UnOp)
-                           -> Ty<'tcx>
-    {
+    pub fn check_user_unop(
+        &self,
+        ex: &'tcx hir::Expr,
+        operand_ty: Ty<'tcx>,
+        op: hir::UnOp,
+    ) -> Ty<'tcx> {
         assert!(op.is_by_value());
         match self.lookup_op_method(operand_ty, &[], Op::Unary(op, ex.span)) {
             Ok(method) => {
@@ -581,7 +626,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 method.sig.output()
             }
             Err(()) => {
-                let actual = self.resolve_type_vars_if_possible(&operand_ty);
+                let actual = self.resolve_vars_if_possible(&operand_ty);
                 if !actual.references_error() {
                     let mut err = struct_span_err!(self.tcx.sess, ex.span, E0600,
                                      "cannot apply unary operator `{}` to type `{}`",

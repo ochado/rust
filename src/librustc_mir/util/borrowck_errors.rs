@@ -399,17 +399,13 @@ pub trait BorrowckErrors<'cx>: Sized + Copy {
         move_from_desc: &str,
         o: Origin,
     ) -> DiagnosticBuilder<'cx> {
-        let mut err = struct_span_err!(
+        let err = struct_span_err!(
             self,
             move_from_span,
             E0507,
             "cannot move out of {}{OGN}",
             move_from_desc,
             OGN = o
-        );
-        err.span_label(
-            move_from_span,
-            format!("cannot move out of {}", move_from_desc),
         );
 
         self.cancel_if_wrong_origin(err, o)
@@ -434,8 +430,7 @@ pub trait BorrowckErrors<'cx>: Sized + Copy {
             self,
             move_from_span,
             E0508,
-            "cannot move out of type `{}`, \
-             a non-copy {}{OGN}",
+            "cannot move out of type `{}`, a non-copy {}{OGN}",
             ty,
             type_name,
             OGN = o
@@ -455,8 +450,7 @@ pub trait BorrowckErrors<'cx>: Sized + Copy {
             self,
             move_from_span,
             E0509,
-            "cannot move out of type `{}`, \
-             which implements the `Drop` trait{OGN}",
+            "cannot move out of type `{}`, which implements the `Drop` trait{OGN}",
             container_ty,
             OGN = o
         );
@@ -634,6 +628,7 @@ pub trait BorrowckErrors<'cx>: Sized + Copy {
     fn cannot_return_reference_to_local(
         self,
         span: Span,
+        return_kind: &str,
         reference_desc: &str,
         path_desc: &str,
         o: Origin,
@@ -642,7 +637,8 @@ pub trait BorrowckErrors<'cx>: Sized + Copy {
             self,
             span,
             E0515,
-            "cannot return {REFERENCE} {LOCAL}{OGN}",
+            "cannot {RETURN} {REFERENCE} {LOCAL}{OGN}",
+            RETURN=return_kind,
             REFERENCE=reference_desc,
             LOCAL=path_desc,
             OGN = o
@@ -650,7 +646,7 @@ pub trait BorrowckErrors<'cx>: Sized + Copy {
 
         err.span_label(
             span,
-            format!("returns a {} data owned by the current function", reference_desc),
+            format!("{}s a {} data owned by the current function", return_kind, reference_desc),
         );
 
         self.cancel_if_wrong_origin(err, o)
@@ -792,25 +788,25 @@ pub trait BorrowckErrors<'cx>: Sized + Copy {
     }
 }
 
-impl<'cx, 'gcx, 'tcx> BorrowckErrors<'cx> for TyCtxt<'cx, 'gcx, 'tcx> {
+impl BorrowckErrors<'tcx> for TyCtxt<'tcx> {
     fn struct_span_err_with_code<S: Into<MultiSpan>>(
         self,
         sp: S,
         msg: &str,
         code: DiagnosticId,
-    ) -> DiagnosticBuilder<'cx> {
+    ) -> DiagnosticBuilder<'tcx> {
         self.sess.struct_span_err_with_code(sp, msg, code)
     }
 
-    fn struct_span_err<S: Into<MultiSpan>>(self, sp: S, msg: &str) -> DiagnosticBuilder<'cx> {
+    fn struct_span_err<S: Into<MultiSpan>>(self, sp: S, msg: &str) -> DiagnosticBuilder<'tcx> {
         self.sess.struct_span_err(sp, msg)
     }
 
     fn cancel_if_wrong_origin(
         self,
-        mut diag: DiagnosticBuilder<'cx>,
+        mut diag: DiagnosticBuilder<'tcx>,
         o: Origin,
-    ) -> DiagnosticBuilder<'cx> {
+    ) -> DiagnosticBuilder<'tcx> {
         if !o.should_emit_errors(self.borrowck_mode()) {
             self.sess.diagnostic().cancel(&mut diag);
         }

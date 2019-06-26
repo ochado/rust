@@ -56,13 +56,13 @@
 #[allow_internal_unstable(__rust_unstable_column, libstd_sys_internals)]
 macro_rules! panic {
     () => ({
-        panic!("explicit panic")
+        $crate::panic!("explicit panic")
     });
     ($msg:expr) => ({
         $crate::rt::begin_panic($msg, &(file!(), line!(), __rust_unstable_column!()))
     });
     ($msg:expr,) => ({
-        panic!($msg)
+        $crate::panic!($msg)
     });
     ($fmt:expr, $($arg:tt)+) => ({
         $crate::rt::begin_panic_fmt(&format_args!($fmt, $($arg)+),
@@ -145,7 +145,7 @@ macro_rules! print {
 #[stable(feature = "rust1", since = "1.0.0")]
 #[allow_internal_unstable(print_internals, format_args_nl)]
 macro_rules! println {
-    () => (print!("\n"));
+    () => ($crate::print!("\n"));
     ($($arg:tt)*) => ({
         $crate::io::_print(format_args_nl!($($arg)*));
     })
@@ -204,7 +204,7 @@ macro_rules! eprint {
 #[stable(feature = "eprint", since = "1.19.0")]
 #[allow_internal_unstable(print_internals, format_args_nl)]
 macro_rules! eprintln {
-    () => (eprint!("\n"));
+    () => ($crate::eprint!("\n"));
     ($($arg:tt)*) => ({
         $crate::io::_eprint(format_args_nl!($($arg)*));
     })
@@ -337,102 +337,24 @@ macro_rules! eprintln {
 #[stable(feature = "dbg_macro", since = "1.32.0")]
 macro_rules! dbg {
     () => {
-        eprintln!("[{}:{}]", file!(), line!());
+        $crate::eprintln!("[{}:{}]", file!(), line!());
     };
     ($val:expr) => {
         // Use of `match` here is intentional because it affects the lifetimes
         // of temporaries - https://stackoverflow.com/a/48732525/1063961
         match $val {
             tmp => {
-                eprintln!("[{}:{}] {} = {:#?}",
+                $crate::eprintln!("[{}:{}] {} = {:#?}",
                     file!(), line!(), stringify!($val), &tmp);
                 tmp
             }
         }
     };
     // Trailing comma with single argument is ignored
-    ($val:expr,) => { dbg!($val) };
+    ($val:expr,) => { $crate::dbg!($val) };
     ($($val:expr),+ $(,)?) => {
-        ($(dbg!($val)),+,)
+        ($($crate::dbg!($val)),+,)
     };
-}
-
-/// Awaits the completion of an async call.
-#[macro_export]
-#[unstable(feature = "await_macro", issue = "50547")]
-#[allow_internal_unstable(gen_future, generators)]
-#[allow_internal_unsafe]
-macro_rules! r#await {
-    ($e:expr) => { {
-        let mut pinned = $e;
-        loop {
-            if let $crate::task::Poll::Ready(x) =
-                $crate::future::poll_with_tls_context(unsafe {
-                    $crate::pin::Pin::new_unchecked(&mut pinned)
-                })
-            {
-                break x;
-            }
-            // FIXME(cramertj) prior to stabilizing await, we have to ensure that this
-            // can't be used to create a generator on stable via `|| await!()`.
-            yield
-        }
-    } }
-}
-
-/// Selects the first successful receive event from a number of receivers.
-///
-/// This macro is used to wait for the first event to occur on a number of
-/// receivers. It places no restrictions on the types of receivers given to
-/// this macro, this can be viewed as a heterogeneous select.
-///
-/// # Examples
-///
-/// ```
-/// #![feature(mpsc_select)]
-///
-/// use std::thread;
-/// use std::sync::mpsc;
-///
-/// // two placeholder functions for now
-/// fn long_running_thread() {}
-/// fn calculate_the_answer() -> u32 { 42 }
-///
-/// let (tx1, rx1) = mpsc::channel();
-/// let (tx2, rx2) = mpsc::channel();
-///
-/// thread::spawn(move|| { long_running_thread(); tx1.send(()).unwrap(); });
-/// thread::spawn(move|| { tx2.send(calculate_the_answer()).unwrap(); });
-///
-/// select! {
-///     _ = rx1.recv() => println!("the long running thread finished first"),
-///     answer = rx2.recv() => {
-///         println!("the answer was: {}", answer.unwrap());
-///     }
-/// }
-/// # drop(rx1.recv());
-/// # drop(rx2.recv());
-/// ```
-///
-/// For more information about select, see the `std::sync::mpsc::Select` structure.
-#[macro_export]
-#[unstable(feature = "mpsc_select", issue = "27800")]
-#[rustc_deprecated(since = "1.32.0",
-                   reason = "channel selection will be removed in a future release")]
-macro_rules! select {
-    (
-        $($name:pat = $rx:ident.$meth:ident() => $code:expr),+
-    ) => ({
-        use $crate::sync::mpsc::Select;
-        let sel = Select::new();
-        $( let mut $rx = sel.handle(&$rx); )+
-        unsafe {
-            $( $rx.add(); )+
-        }
-        let ret = sel.wait();
-        $( if ret == $rx.id() { let $name = $rx.$meth(); $code } else )+
-        { unreachable!() }
-    })
 }
 
 #[cfg(test)]
@@ -483,7 +405,7 @@ mod builtin {
     ///
     /// ```compile_fail
     /// #[cfg(not(any(feature = "foo", feature = "bar")))]
-    /// compile_error!("Either feature \"foo\" or \"bar\" must be enabled for this crate.")
+    /// compile_error!("Either feature \"foo\" or \"bar\" must be enabled for this crate.");
     /// ```
     ///
     /// [`panic!`]: ../std/macro.panic.html
@@ -972,41 +894,5 @@ mod builtin {
         ($cond:expr) => ({ /* compiler built-in */ });
         ($cond:expr,) => ({ /* compiler built-in */ });
         ($cond:expr, $($arg:tt)+) => ({ /* compiler built-in */ });
-    }
-}
-
-/// Defines `#[cfg]` if-else statements.
-///
-/// This is similar to the `if/elif` C preprocessor macro by allowing definition
-/// of a cascade of `#[cfg]` cases, emitting the implementation which matches
-/// first.
-///
-/// This allows you to conveniently provide a long list `#[cfg]`'d blocks of code
-/// without having to rewrite each clause multiple times.
-macro_rules! cfg_if {
-    ($(
-        if #[cfg($($meta:meta),*)] { $($it:item)* }
-    ) else * else {
-        $($it2:item)*
-    }) => {
-        __cfg_if_items! {
-            () ;
-            $( ( ($($meta),*) ($($it)*) ), )*
-            ( () ($($it2)*) ),
-        }
-    }
-}
-
-macro_rules! __cfg_if_items {
-    (($($not:meta,)*) ; ) => {};
-    (($($not:meta,)*) ; ( ($($m:meta),*) ($($it:item)*) ), $($rest:tt)*) => {
-        __cfg_if_apply! { cfg(all(not(any($($not),*)), $($m,)*)), $($it)* }
-        __cfg_if_items! { ($($not,)* $($m,)*) ; $($rest)* }
-    }
-}
-
-macro_rules! __cfg_if_apply {
-    ($m:meta, $($it:item)*) => {
-        $(#[$m] $it)*
     }
 }

@@ -1,7 +1,7 @@
 use rustc::hir::def::{Res, DefKind};
 use rustc::hir::def_id::DefId;
 use rustc::lint;
-use rustc::ty;
+use rustc::ty::{self, Ty};
 use rustc::ty::adjustment;
 use rustc_data_structures::fx::FxHashMap;
 use lint::{LateContext, EarlyContext, LintContext, LintArray};
@@ -12,7 +12,7 @@ use syntax::attr;
 use syntax::errors::Applicability;
 use syntax::feature_gate::{AttributeType, BuiltinAttribute, BUILTIN_ATTRIBUTE_MAP};
 use syntax::print::pprust;
-use syntax::symbol::keywords;
+use syntax::symbol::{kw, sym};
 use syntax::symbol::Symbol;
 use syntax::util::parser;
 use syntax_pos::Span;
@@ -47,43 +47,8 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnusedResults {
             return;
         }
 
-        let t = cx.tables.expr_ty(&expr);
-        let type_permits_lack_of_use = if t.is_unit()
-            || cx.tcx.is_ty_uninhabited_from(
-                cx.tcx.hir().get_module_parent_by_hir_id(expr.hir_id), t)
-        {
-            true
-        } else {
-            match t.sty {
-                ty::Adt(def, _) => check_must_use(cx, def.did, s.span, "", ""),
-                ty::Opaque(def, _) => {
-                    let mut must_use = false;
-                    for (predicate, _) in &cx.tcx.predicates_of(def).predicates {
-                        if let ty::Predicate::Trait(ref poly_trait_predicate) = predicate {
-                            let trait_ref = poly_trait_predicate.skip_binder().trait_ref;
-                            if check_must_use(cx, trait_ref.def_id, s.span, "implementer of ", "") {
-                                must_use = true;
-                                break;
-                            }
-                        }
-                    }
-                    must_use
-                }
-                ty::Dynamic(binder, _) => {
-                    let mut must_use = false;
-                    for predicate in binder.skip_binder().iter() {
-                        if let ty::ExistentialPredicate::Trait(ref trait_ref) = predicate {
-                            if check_must_use(cx, trait_ref.def_id, s.span, "", " trait object") {
-                                must_use = true;
-                                break;
-                            }
-                        }
-                    }
-                    must_use
-                }
-                _ => false,
-            }
-        };
+        let ty = cx.tables.expr_ty(&expr);
+        let type_permits_lack_of_use = check_must_use_ty(cx, ty, &expr, s.span, "");
 
         let mut fn_warned = false;
         let mut op_warned = false;
@@ -108,7 +73,7 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnusedResults {
             _ => None
         };
         if let Some(def_id) = maybe_def_id {
-            fn_warned = check_must_use(cx, def_id, s.span, "return value of ", "");
+            fn_warned = check_must_use_def(cx, def_id, s.span, "return value of ", "");
         } else if type_permits_lack_of_use {
             // We don't warn about unused unit or uninhabited types.
             // (See https://github.com/rust-lang/rust/issues/43806 for details.)
@@ -162,18 +127,83 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnusedResults {
             cx.span_lint(UNUSED_RESULTS, s.span, "unused result");
         }
 
-        fn check_must_use(
+        // Returns whether an error has been emitted (and thus another does not need to be later).
+        fn check_must_use_ty<'tcx>(
+            cx: &LateContext<'_, 'tcx>,
+            ty: Ty<'tcx>,
+            expr: &hir::Expr,
+            span: Span,
+            descr_post_path: &str,
+        ) -> bool {
+            if ty.is_unit() || cx.tcx.is_ty_uninhabited_from(
+                cx.tcx.hir().get_module_parent(expr.hir_id), ty)
+            {
+                return true;
+            }
+
+            match ty.sty {
+                ty::Adt(def, _) => check_must_use_def(cx, def.did, span, "", descr_post_path),
+                ty::Opaque(def, _) => {
+                    let mut has_emitted = false;
+                    for (predicate, _) in &cx.tcx.predicates_of(def).predicates {
+                        if let ty::Predicate::Trait(ref poly_trait_predicate) = predicate {
+                            let trait_ref = poly_trait_predicate.skip_binder().trait_ref;
+                            let def_id = trait_ref.def_id;
+                            if check_must_use_def(cx, def_id, span, "implementer of ", "") {
+                                has_emitted = true;
+                                break;
+                            }
+                        }
+                    }
+                    has_emitted
+                }
+                ty::Dynamic(binder, _) => {
+                    let mut has_emitted = false;
+                    for predicate in binder.skip_binder().iter() {
+                        if let ty::ExistentialPredicate::Trait(ref trait_ref) = predicate {
+                            let def_id = trait_ref.def_id;
+                            if check_must_use_def(cx, def_id, span, "", " trait object") {
+                                has_emitted = true;
+                                break;
+                            }
+                        }
+                    }
+                    has_emitted
+                }
+                ty::Tuple(ref tys) => {
+                    let mut has_emitted = false;
+                    let spans = if let hir::ExprKind::Tup(comps) = &expr.node {
+                        debug_assert_eq!(comps.len(), tys.len());
+                        comps.iter().map(|e| e.span).collect()
+                    } else {
+                        vec![]
+                    };
+                    for (i, ty) in tys.iter().map(|k| k.expect_ty()).enumerate() {
+                        let descr_post_path = &format!(" in tuple element {}", i);
+                        let span = *spans.get(i).unwrap_or(&span);
+                        if check_must_use_ty(cx, ty, expr, span, descr_post_path) {
+                            has_emitted = true;
+                        }
+                    }
+                    has_emitted
+                }
+                _ => false,
+            }
+        }
+
+        // Returns whether an error has been emitted (and thus another does not need to be later).
+        fn check_must_use_def(
             cx: &LateContext<'_, '_>,
             def_id: DefId,
-            sp: Span,
+            span: Span,
             descr_pre_path: &str,
             descr_post_path: &str,
         ) -> bool {
             for attr in cx.tcx.get_attrs(def_id).iter() {
-                if attr.check_name("must_use") {
+                if attr.check_name(sym::must_use) {
                     let msg = format!("unused {}`{}`{} that must be used",
                         descr_pre_path, cx.tcx.def_path_str(def_id), descr_post_path);
-                    let mut err = cx.struct_span_lint(UNUSED_MUST_USE, sp, &msg);
+                    let mut err = cx.struct_span_lint(UNUSED_MUST_USE, span, &msg);
                     // check for #[must_use = "..."]
                     if let Some(note) = attr.value_str() {
                         err.note(&note.as_str());
@@ -243,8 +273,8 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnusedAttributes {
         }
 
         let plugin_attributes = cx.sess().plugin_attributes.borrow_mut();
-        for &(ref name, ty) in plugin_attributes.iter() {
-            if ty == AttributeType::Whitelisted && attr.check_name(&**name) {
+        for &(name, ty) in plugin_attributes.iter() {
+            if ty == AttributeType::Whitelisted && attr.check_name(name) {
                 debug!("{:?} (plugin attr) is whitelisted with ty {:?}", name, ty);
                 break;
             }
@@ -262,7 +292,7 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UnusedAttributes {
             // Has a plugin registered this attribute as one that must be used at
             // the crate level?
             let plugin_crate = plugin_attributes.iter()
-                .find(|&&(ref x, t)| name == x.as_str() && AttributeType::CrateLevel == t)
+                .find(|&&(x, t)| name == x && AttributeType::CrateLevel == t)
                 .is_some();
             if known_crate || plugin_crate {
                 let msg = match attr.style {
@@ -294,20 +324,28 @@ impl UnusedParens {
                                 value: &ast::Expr,
                                 msg: &str,
                                 followed_by_block: bool) {
-        if let ast::ExprKind::Paren(ref inner) = value.node {
-            let necessary = followed_by_block && match inner.node {
-                ast::ExprKind::Ret(_) | ast::ExprKind::Break(..) => true,
-                _ => parser::contains_exterior_struct_lit(&inner),
-            };
-            if !necessary {
-                let expr_text = if let Ok(snippet) = cx.sess().source_map()
-                    .span_to_snippet(value.span) {
-                        snippet
-                    } else {
-                        pprust::expr_to_string(value)
-                    };
-                Self::remove_outer_parens(cx, value.span, &expr_text, msg);
+        match value.node {
+            ast::ExprKind::Paren(ref inner) => {
+                let necessary = followed_by_block && match inner.node {
+                    ast::ExprKind::Ret(_) | ast::ExprKind::Break(..) => true,
+                    _ => parser::contains_exterior_struct_lit(&inner),
+                };
+                if !necessary {
+                    let expr_text = if let Ok(snippet) = cx.sess().source_map()
+                        .span_to_snippet(value.span) {
+                            snippet
+                        } else {
+                            pprust::expr_to_string(value)
+                        };
+                    Self::remove_outer_parens(cx, value.span, &expr_text, msg);
+                }
             }
+            ast::ExprKind::Let(_, ref expr) => {
+                // FIXME(#60336): Properly handle `let true = (false && true)`
+                // actually needing the parenthesis.
+                self.check_unused_parens_expr(cx, expr, "`let` head expression", followed_by_block);
+            }
+            _ => {}
         }
     }
 
@@ -369,8 +407,6 @@ impl EarlyLintPass for UnusedParens {
         let (value, msg, followed_by_block) = match e.node {
             If(ref cond, ..) => (cond, "`if` condition", true),
             While(ref cond, ..) => (cond, "`while` condition", true),
-            IfLet(_, ref cond, ..) => (cond, "`if let` head expression", true),
-            WhileLet(_, ref cond, ..) => (cond, "`while let` head expression", true),
             ForLoop(_, ref cond, ..) => (cond, "`for` head expression", true),
             Match(ref head, _) => (head, "`match` head expression", true),
             Ret(Some(ref value)) => (value, "`return` value", false),
@@ -391,9 +427,8 @@ impl EarlyLintPass for UnusedParens {
                 // trigger in situations that macro authors shouldn't have to care about, e.g.,
                 // when a parenthesized token tree matched in one macro expansion is matched as
                 // an expression in another and used as a fn/method argument (Issue #47775)
-                if e.span.ctxt().outer().expn_info()
-                    .map_or(false, |info| info.call_site.ctxt().outer()
-                            .expn_info().is_some()) {
+                if e.span.ctxt().outer_expn_info()
+                    .map_or(false, |info| info.call_site.ctxt().outer_expn_info().is_some()) {
                         return;
                 }
                 let msg = format!("{} argument", call_kind);
@@ -455,7 +490,7 @@ impl UnusedImportBraces {
             match items[0].0.kind {
                 ast::UseTreeKind::Simple(rename, ..) => {
                     let orig_ident = items[0].0.prefix.segments.last().unwrap().ident;
-                    if orig_ident.name == keywords::SelfLower.name() {
+                    if orig_ident.name == kw::SelfLower {
                         return;
                     }
                     node_ident = rename.unwrap_or(orig_ident);

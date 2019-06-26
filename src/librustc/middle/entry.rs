@@ -4,13 +4,14 @@ use crate::session::{config, Session};
 use crate::session::config::EntryFnType;
 use syntax::attr;
 use syntax::entry::EntryPointType;
+use syntax::symbol::sym;
 use syntax_pos::Span;
 use crate::hir::{HirId, Item, ItemKind, ImplItem, TraitItem};
 use crate::hir::itemlikevisit::ItemLikeVisitor;
 use crate::ty::TyCtxt;
 use crate::ty::query::Providers;
 
-struct EntryContext<'a, 'tcx: 'a> {
+struct EntryContext<'a, 'tcx> {
     session: &'a Session,
 
     map: &'a hir_map::Map<'tcx>,
@@ -46,7 +47,7 @@ impl<'a, 'tcx> ItemLikeVisitor<'tcx> for EntryContext<'a, 'tcx> {
     }
 }
 
-fn entry_fn(tcx: TyCtxt<'_, '_, '_>, cnum: CrateNum) -> Option<(DefId, EntryFnType)> {
+fn entry_fn(tcx: TyCtxt<'_>, cnum: CrateNum) -> Option<(DefId, EntryFnType)> {
     assert_eq!(cnum, LOCAL_CRATE);
 
     let any_exe = tcx.sess.crate_types.borrow().iter().any(|ty| {
@@ -58,7 +59,7 @@ fn entry_fn(tcx: TyCtxt<'_, '_, '_>, cnum: CrateNum) -> Option<(DefId, EntryFnTy
     }
 
     // If the user wants no main function at all, then stop here.
-    if attr::contains_name(&tcx.hir().krate().attrs, "no_main") {
+    if attr::contains_name(&tcx.hir().krate().attrs, sym::no_main) {
         return None;
     }
 
@@ -81,11 +82,11 @@ fn entry_fn(tcx: TyCtxt<'_, '_, '_>, cnum: CrateNum) -> Option<(DefId, EntryFnTy
 fn entry_point_type(item: &Item, at_root: bool) -> EntryPointType {
     match item.node {
         ItemKind::Fn(..) => {
-            if attr::contains_name(&item.attrs, "start") {
+            if attr::contains_name(&item.attrs, sym::start) {
                 EntryPointType::Start
-            } else if attr::contains_name(&item.attrs, "main") {
+            } else if attr::contains_name(&item.attrs, sym::main) {
                 EntryPointType::MainAttr
-            } else if item.ident.name == "main" {
+            } else if item.ident.name == sym::main {
                 if at_root {
                     // This is a top-level function so can be 'main'.
                     EntryPointType::MainNamed
@@ -139,10 +140,7 @@ fn find_item(item: &Item, ctxt: &mut EntryContext<'_, '_>, at_root: bool) {
     }
 }
 
-fn configure_main(
-    tcx: TyCtxt<'_, '_, '_>,
-    visitor: &EntryContext<'_, '_>,
-) -> Option<(DefId, EntryFnType)> {
+fn configure_main(tcx: TyCtxt<'_>, visitor: &EntryContext<'_, '_>) -> Option<(DefId, EntryFnType)> {
     if let Some((hir_id, _)) = visitor.start_fn {
         Some((tcx.hir().local_def_id_from_hir_id(hir_id), EntryFnType::Start))
     } else if let Some((hir_id, _)) = visitor.attr_main_fn {
@@ -178,7 +176,7 @@ fn configure_main(
     }
 }
 
-pub fn find_entry_point(tcx: TyCtxt<'_, '_, '_>) -> Option<(DefId, EntryFnType)> {
+pub fn find_entry_point(tcx: TyCtxt<'_>) -> Option<(DefId, EntryFnType)> {
     tcx.entry_fn(LOCAL_CRATE)
 }
 

@@ -3,7 +3,7 @@
 #
 # Versions of the toolchain components are configurable in `musl-cross-make/Makefile` and
 # musl unlike GLIBC is forward compatible so upgrading it shouldn't break old distributions.
-# Right now we have: Binutils 2.27, GCC 6.3.0, musl 1.1.18
+# Right now we have: Binutils 2.27, GCC 6.4.0, musl 1.1.22.
 set -ex
 
 hide_output() {
@@ -33,7 +33,7 @@ shift
 # Apparently applying `-fPIC` everywhere allows them to link successfully.
 export CFLAGS="-fPIC $CFLAGS"
 
-git clone https://github.com/richfelker/musl-cross-make -b v0.9.7
+git clone https://github.com/richfelker/musl-cross-make -b v0.9.8
 cd musl-cross-make
 
 hide_output make -j$(nproc) TARGET=$TARGET
@@ -45,6 +45,15 @@ cd -
 ln -s $OUTPUT/$TARGET/lib/libc.so /lib/ld-musl-$ARCH.so.1
 echo $OUTPUT/$TARGET/lib >> /etc/ld-musl-$ARCH.path
 
+# Now when musl bootstraps itself create proper toolchain symlinks to make build and tests easier
+if [ "$REPLACE_CC" = "1" ]; then
+    for exec in cc gcc; do
+        ln -s $TARGET-gcc /usr/local/bin/$exec
+    done
+    for exec in cpp c++ g++; do
+        ln -s $TARGET-g++ /usr/local/bin/$exec
+    done
+fi
 
 export CC=$TARGET-gcc
 export CXX=$TARGET-g++

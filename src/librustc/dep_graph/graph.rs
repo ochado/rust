@@ -90,7 +90,6 @@ where
 }
 
 impl DepGraph {
-
     pub fn new(prev_graph: PreviousDepGraph,
                prev_work_products: FxHashMap<WorkProductId, WorkProduct>) -> DepGraph {
         let prev_graph_node_count = prev_graph.node_count();
@@ -558,8 +557,8 @@ impl DepGraph {
     /// a node index can be found for that node.
     pub fn try_mark_green_and_read(
         &self,
-        tcx: TyCtxt<'_, '_, '_>,
-        dep_node: &DepNode
+        tcx: TyCtxt<'_>,
+        dep_node: &DepNode,
     ) -> Option<(SerializedDepNodeIndex, DepNodeIndex)> {
         self.try_mark_green(tcx, dep_node).map(|(prev_index, dep_node_index)| {
             debug_assert!(self.is_green(&dep_node));
@@ -570,8 +569,8 @@ impl DepGraph {
 
     pub fn try_mark_green(
         &self,
-        tcx: TyCtxt<'_, '_, '_>,
-        dep_node: &DepNode
+        tcx: TyCtxt<'_>,
+        dep_node: &DepNode,
     ) -> Option<(SerializedDepNodeIndex, DepNodeIndex)> {
         debug_assert!(!dep_node.kind.is_eval_always());
 
@@ -604,10 +603,10 @@ impl DepGraph {
     /// Try to mark a dep-node which existed in the previous compilation session as green.
     fn try_mark_previous_green<'tcx>(
         &self,
-        tcx: TyCtxt<'_, 'tcx, 'tcx>,
+        tcx: TyCtxt<'tcx>,
         data: &DepGraphData,
         prev_dep_node_index: SerializedDepNodeIndex,
-        dep_node: &DepNode
+        dep_node: &DepNode,
     ) -> Option<DepNodeIndex> {
         debug!("try_mark_previous_green({:?}) - BEGIN", dep_node);
 
@@ -791,7 +790,7 @@ impl DepGraph {
     #[inline(never)]
     fn emit_diagnostics<'tcx>(
         &self,
-        tcx: TyCtxt<'_, 'tcx, 'tcx>,
+        tcx: TyCtxt<'tcx>,
         data: &DepGraphData,
         dep_node_index: DepNodeIndex,
         did_allocation: bool,
@@ -842,7 +841,7 @@ impl DepGraph {
     //
     // This method will only load queries that will end up in the disk cache.
     // Other queries will not be executed.
-    pub fn exec_cache_promotions<'a, 'tcx>(&self, tcx: TyCtxt<'a, 'tcx, 'tcx>) {
+    pub fn exec_cache_promotions<'tcx>(&self, tcx: TyCtxt<'tcx>) {
         let green_nodes: Vec<DepNode> = {
             let data = self.data.as_ref().unwrap();
             data.colors.values.indices().filter_map(|prev_index| {
@@ -1021,25 +1020,22 @@ impl CurrentDepGraph {
     fn complete_anon_task(&mut self, kind: DepKind, task_deps: TaskDeps) -> DepNodeIndex {
         debug_assert!(!kind.is_eval_always());
 
-        let mut fingerprint = self.anon_id_seed;
         let mut hasher = StableHasher::new();
 
-        for &read in task_deps.reads.iter() {
-            let read_dep_node = self.data[read].node;
+        // The dep node indices are hashed here instead of hashing the dep nodes of the
+        // dependencies. These indices may refer to different nodes per session, but this isn't
+        // a problem here because we that ensure the final dep node hash is per session only by
+        // combining it with the per session random number `anon_id_seed`. This hash only need
+        // to map the dependencies to a single value on a per session basis.
+        task_deps.reads.hash(&mut hasher);
 
-            ::std::mem::discriminant(&read_dep_node.kind).hash(&mut hasher);
+        let target_dep_node = DepNode {
+            kind,
 
             // Fingerprint::combine() is faster than sending Fingerprint
             // through the StableHasher (at least as long as StableHasher
             // is so slow).
-            fingerprint = fingerprint.combine(read_dep_node.hash);
-        }
-
-        fingerprint = fingerprint.combine(hasher.finish());
-
-        let target_dep_node = DepNode {
-            kind,
-            hash: fingerprint,
+            hash: self.anon_id_seed.combine(hasher.finish()),
         };
 
         self.intern_node(target_dep_node, task_deps.reads, Fingerprint::ZERO).0

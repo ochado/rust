@@ -7,7 +7,7 @@ use std::mem;
 use std::fmt::{self, Write};
 use std::ops;
 
-use syntax::symbol::Symbol;
+use syntax::symbol::{Symbol, sym};
 use syntax::ast::{MetaItem, MetaItemKind, NestedMetaItem, LitKind};
 use syntax::parse::ParseSess;
 use syntax::feature_gate::Features;
@@ -186,7 +186,7 @@ impl Cfg {
 
     fn should_use_with_in_description(&self) -> bool {
         match *self {
-            Cfg::Cfg(ref name, _) if name == &"target_feature" => true,
+            Cfg::Cfg(name, _) if name == sym::target_feature => true,
             _ => false,
         }
     }
@@ -338,7 +338,6 @@ impl<'a> fmt::Display for Html<'a> {
                     ("debug_assertions", None) => "debug-assertions enabled",
                     ("target_os", Some(os)) => match &*os.as_str() {
                         "android" => "Android",
-                        "bitrig" => "Bitrig",
                         "dragonfly" => "DragonFly BSD",
                         "emscripten" => "Emscripten",
                         "freebsd" => "FreeBSD",
@@ -414,11 +413,12 @@ impl<'a> fmt::Display for Html<'a> {
 mod test {
     use super::Cfg;
 
-    use syntax::symbol::Symbol;
-    use syntax::ast::*;
-    use syntax::source_map::dummy_spanned;
     use syntax_pos::DUMMY_SP;
-    use syntax::with_globals;
+    use syntax::ast::*;
+    use syntax::attr;
+    use syntax::source_map::dummy_spanned;
+    use syntax::symbol::Symbol;
+    use syntax::with_default_globals;
 
     fn word_cfg(s: &str) -> Cfg {
         Cfg::Cfg(Symbol::intern(s), None)
@@ -466,7 +466,7 @@ mod test {
 
     #[test]
     fn test_cfg_not() {
-        with_globals(|| {
+        with_default_globals(|| {
             assert_eq!(!Cfg::False, Cfg::True);
             assert_eq!(!Cfg::True, Cfg::False);
             assert_eq!(!word_cfg("test"), Cfg::Not(Box::new(word_cfg("test"))));
@@ -484,7 +484,7 @@ mod test {
 
     #[test]
     fn test_cfg_and() {
-        with_globals(|| {
+        with_default_globals(|| {
             let mut x = Cfg::False;
             x &= Cfg::True;
             assert_eq!(x, Cfg::False);
@@ -536,7 +536,7 @@ mod test {
 
     #[test]
     fn test_cfg_or() {
-        with_globals(|| {
+        with_default_globals(|| {
             let mut x = Cfg::True;
             x |= Cfg::False;
             assert_eq!(x, Cfg::True);
@@ -588,18 +588,14 @@ mod test {
 
     #[test]
     fn test_parse_ok() {
-        with_globals(|| {
+        with_default_globals(|| {
             let mi = dummy_meta_item_word("all");
             assert_eq!(Cfg::parse(&mi), Ok(word_cfg("all")));
 
-            let mi = MetaItem {
-                path: Path::from_ident(Ident::from_str("all")),
-                node: MetaItemKind::NameValue(dummy_spanned(LitKind::Str(
-                    Symbol::intern("done"),
-                    StrStyle::Cooked,
-                ))),
-                span: DUMMY_SP,
-            };
+            let mi = attr::mk_name_value_item_str(
+                Ident::from_str("all"),
+                dummy_spanned(Symbol::intern("done"))
+            );
             assert_eq!(Cfg::parse(&mi), Ok(name_value_cfg("all", "done")));
 
             let mi = dummy_meta_item_list!(all, [a, b]);
@@ -626,12 +622,13 @@ mod test {
 
     #[test]
     fn test_parse_err() {
-        with_globals(|| {
-            let mi = MetaItem {
-                path: Path::from_ident(Ident::from_str("foo")),
-                node: MetaItemKind::NameValue(dummy_spanned(LitKind::Bool(false))),
-                span: DUMMY_SP,
-            };
+        with_default_globals(|| {
+            let mi = attr::mk_name_value_item(
+                DUMMY_SP,
+                Ident::from_str("foo"),
+                LitKind::Bool(false),
+                DUMMY_SP,
+            );
             assert!(Cfg::parse(&mi).is_err());
 
             let mi = dummy_meta_item_list!(not, [a, b]);
@@ -664,7 +661,7 @@ mod test {
 
     #[test]
     fn test_render_short_html() {
-        with_globals(|| {
+        with_default_globals(|| {
             assert_eq!(
                 word_cfg("unix").render_short_html(),
                 "Unix"
@@ -744,7 +741,7 @@ mod test {
 
     #[test]
     fn test_render_long_html() {
-        with_globals(|| {
+        with_default_globals(|| {
             assert_eq!(
                 word_cfg("unix").render_long_html(),
                 "This is supported on <strong>Unix</strong> only."

@@ -50,6 +50,7 @@ assert_eq!(size_of::<Option<core::num::", stringify!($Ty), ">>(), size_of::<", s
                 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
                 #[repr(transparent)]
                 #[rustc_layout_scalar_valid_range_start(1)]
+                #[cfg_attr(not(bootstrap), rustc_nonnull_optimization_guaranteed)]
                 pub struct $Ty($Int);
             }
 
@@ -214,11 +215,31 @@ pub mod diy_float;
 
 mod wrapping;
 
+macro_rules! usize_isize_to_xe_bytes_doc {
+    () => {"
+
+**Note**: This function returns an array of length 2, 4 or 8 bytes
+depending on the target pointer size.
+
+"}
+}
+
+
+macro_rules! usize_isize_from_xe_bytes_doc {
+    () => {"
+
+**Note**: This function takes an array of length 2, 4 or 8 bytes
+depending on the target pointer size.
+
+"}
+}
+
 // `Int` + `SignedInt` implemented for signed integers
 macro_rules! int_impl {
     ($SelfT:ty, $ActualT:ident, $UnsignedT:ty, $BITS:expr, $Min:expr, $Max:expr, $Feature:expr,
      $EndFeature:expr, $rot:expr, $rot_op:expr, $rot_result:expr, $swap_op:expr, $swapped:expr,
-     $reversed:expr, $le_bytes:expr, $be_bytes:expr) => {
+     $reversed:expr, $le_bytes:expr, $be_bytes:expr,
+     $to_xe_bytes_doc:expr, $from_xe_bytes_doc:expr) => {
         doc_comment! {
             concat!("Returns the smallest value that can be represented by this integer type.
 
@@ -442,16 +463,14 @@ assert_eq!(m, ", $swapped, ");
 Basic usage:
 
 ```
-#![feature(reverse_bits)]
-
 let n = ", $swap_op, stringify!($SelfT), ";
 let m = n.reverse_bits();
 
 assert_eq!(m, ", $reversed, ");
 ```"),
-            #[unstable(feature = "reverse_bits", issue = "48763")]
-            #[rustc_const_unstable(feature = "const_int_conversion")]
+            #[stable(feature = "reverse_bits", since = "1.37.0")]
             #[inline]
+            #[must_use]
             pub const fn reverse_bits(self) -> Self {
                 (self as $UnsignedT).reverse_bits() as Self
             }
@@ -1974,13 +1993,10 @@ assert_eq!((-10", stringify!($SelfT), ").signum(), -1);",
 $EndFeature, "
 ```"),
             #[stable(feature = "rust1", since = "1.0.0")]
+            #[rustc_const_unstable(feature = "const_int_sign")]
             #[inline]
-            pub fn signum(self) -> Self {
-                match self {
-                    n if n > 0 =>  1,
-                    0          =>  0,
-                    _          => -1,
-                }
+            pub const fn signum(self) -> Self {
+                (self > 0) as Self - (self < 0) as Self
             }
         }
 
@@ -2023,7 +2039,9 @@ $EndFeature, "
         doc_comment! {
             concat!("Return the memory representation of this integer as a byte array in
 big-endian (network) byte order.
-
+",
+$to_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -2041,7 +2059,9 @@ assert_eq!(bytes, ", $be_bytes, ");
 doc_comment! {
             concat!("Return the memory representation of this integer as a byte array in
 little-endian byte order.
-
+",
+$to_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -2064,7 +2084,9 @@ native byte order.
 As the target platform's native endianness is used, portable code
 should use [`to_be_bytes`] or [`to_le_bytes`], as appropriate,
 instead.
-
+",
+$to_xe_bytes_doc,
+"
 [`to_be_bytes`]: #method.to_be_bytes
 [`to_le_bytes`]: #method.to_le_bytes
 
@@ -2089,7 +2111,9 @@ assert_eq!(bytes, if cfg!(target_endian = \"big\") {
 doc_comment! {
             concat!("Create an integer value from its representation as a byte array in
 big endian.
-
+",
+$from_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -2120,7 +2144,9 @@ doc_comment! {
             concat!("
 Create an integer value from its representation as a byte array in
 little endian.
-
+",
+$from_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -2157,7 +2183,9 @@ appropriate instead.
 
 [`from_be_bytes`]: #method.from_be_bytes
 [`from_le_bytes`]: #method.from_le_bytes
-
+",
+$from_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -2193,20 +2221,20 @@ fn read_ne_", stringify!($SelfT), "(input: &mut &[u8]) -> ", stringify!($SelfT),
 #[lang = "i8"]
 impl i8 {
     int_impl! { i8, i8, u8, 8, -128, 127, "", "", 2, "-0x7e", "0xa", "0x12", "0x12", "0x48",
-        "[0x12]", "[0x12]" }
+        "[0x12]", "[0x12]", "", "" }
 }
 
 #[lang = "i16"]
 impl i16 {
     int_impl! { i16, i16, u16, 16, -32768, 32767, "", "", 4, "-0x5ffd", "0x3a", "0x1234", "0x3412",
-        "0x2c48", "[0x34, 0x12]", "[0x12, 0x34]" }
+        "0x2c48", "[0x34, 0x12]", "[0x12, 0x34]", "", "" }
 }
 
 #[lang = "i32"]
 impl i32 {
     int_impl! { i32, i32, u32, 32, -2147483648, 2147483647, "", "", 8, "0x10000b3", "0xb301",
         "0x12345678", "0x78563412", "0x1e6a2c48", "[0x78, 0x56, 0x34, 0x12]",
-        "[0x12, 0x34, 0x56, 0x78]" }
+        "[0x12, 0x34, 0x56, 0x78]", "", "" }
 }
 
 #[lang = "i64"]
@@ -2214,7 +2242,7 @@ impl i64 {
     int_impl! { i64, i64, u64, 64, -9223372036854775808, 9223372036854775807, "", "", 12,
          "0xaa00000000006e1", "0x6e10aa", "0x1234567890123456", "0x5634129078563412",
          "0x6a2c48091e6a2c48", "[0x56, 0x34, 0x12, 0x90, 0x78, 0x56, 0x34, 0x12]",
-         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]" }
+         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]", "", "" }
 }
 
 #[lang = "i128"]
@@ -2226,14 +2254,15 @@ impl i128 {
         "[0x12, 0x90, 0x78, 0x56, 0x34, 0x12, 0x90, 0x78, \
           0x56, 0x34, 0x12, 0x90, 0x78, 0x56, 0x34, 0x12]",
         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56, \
-          0x78, 0x90, 0x12, 0x34, 0x56, 0x78, 0x90, 0x12]" }
+          0x78, 0x90, 0x12, 0x34, 0x56, 0x78, 0x90, 0x12]", "", "" }
 }
 
 #[cfg(target_pointer_width = "16")]
 #[lang = "isize"]
 impl isize {
     int_impl! { isize, i16, u16, 16, -32768, 32767, "", "", 4, "-0x5ffd", "0x3a", "0x1234",
-        "0x3412", "0x2c48", "[0x34, 0x12]", "[0x12, 0x34]" }
+        "0x3412", "0x2c48", "[0x34, 0x12]", "[0x12, 0x34]",
+        usize_isize_to_xe_bytes_doc!(), usize_isize_from_xe_bytes_doc!() }
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -2241,7 +2270,8 @@ impl isize {
 impl isize {
     int_impl! { isize, i32, u32, 32, -2147483648, 2147483647, "", "", 8, "0x10000b3", "0xb301",
         "0x12345678", "0x78563412", "0x1e6a2c48", "[0x78, 0x56, 0x34, 0x12]",
-        "[0x12, 0x34, 0x56, 0x78]" }
+        "[0x12, 0x34, 0x56, 0x78]",
+        usize_isize_to_xe_bytes_doc!(), usize_isize_from_xe_bytes_doc!() }
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -2250,14 +2280,16 @@ impl isize {
     int_impl! { isize, i64, u64, 64, -9223372036854775808, 9223372036854775807, "", "",
         12, "0xaa00000000006e1", "0x6e10aa",  "0x1234567890123456", "0x5634129078563412",
          "0x6a2c48091e6a2c48", "[0x56, 0x34, 0x12, 0x90, 0x78, 0x56, 0x34, 0x12]",
-         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]" }
+         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]",
+         usize_isize_to_xe_bytes_doc!(), usize_isize_from_xe_bytes_doc!() }
 }
 
 // `Int` + `UnsignedInt` implemented for unsigned integers
 macro_rules! uint_impl {
     ($SelfT:ty, $ActualT:ty, $BITS:expr, $MaxV:expr, $Feature:expr, $EndFeature:expr,
         $rot:expr, $rot_op:expr, $rot_result:expr, $swap_op:expr, $swapped:expr,
-        $reversed:expr, $le_bytes:expr, $be_bytes:expr) => {
+        $reversed:expr, $le_bytes:expr, $be_bytes:expr,
+        $to_xe_bytes_doc:expr, $from_xe_bytes_doc:expr) => {
         doc_comment! {
             concat!("Returns the smallest value that can be represented by this integer type.
 
@@ -2476,15 +2508,14 @@ assert_eq!(m, ", $swapped, ");
 Basic usage:
 
 ```
-#![feature(reverse_bits)]
-
 let n = ", $swap_op, stringify!($SelfT), ";
 let m = n.reverse_bits();
 
 assert_eq!(m, ", $reversed, ");
 ```"),
-            #[unstable(feature = "reverse_bits", issue = "48763")]
+            #[stable(feature = "reverse_bits", since = "1.37.0")]
             #[inline]
+            #[must_use]
             pub const fn reverse_bits(self) -> Self {
                 intrinsics::bitreverse(self as $ActualT) as Self
             }
@@ -3817,7 +3848,9 @@ $EndFeature, "
         doc_comment! {
             concat!("Return the memory representation of this integer as a byte array in
 big-endian (network) byte order.
-
+",
+$to_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -3835,7 +3868,9 @@ assert_eq!(bytes, ", $be_bytes, ");
         doc_comment! {
             concat!("Return the memory representation of this integer as a byte array in
 little-endian byte order.
-
+",
+$to_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -3858,7 +3893,9 @@ native byte order.
 As the target platform's native endianness is used, portable code
 should use [`to_be_bytes`] or [`to_le_bytes`], as appropriate,
 instead.
-
+",
+$to_xe_bytes_doc,
+"
 [`to_be_bytes`]: #method.to_be_bytes
 [`to_le_bytes`]: #method.to_le_bytes
 
@@ -3883,7 +3920,9 @@ assert_eq!(bytes, if cfg!(target_endian = \"big\") {
         doc_comment! {
             concat!("Create an integer value from its representation as a byte array in
 big endian.
-
+",
+$from_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -3914,7 +3953,9 @@ fn read_be_", stringify!($SelfT), "(input: &mut &[u8]) -> ", stringify!($SelfT),
             concat!("
 Create an integer value from its representation as a byte array in
 little endian.
-
+",
+$from_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -3951,7 +3992,9 @@ appropriate instead.
 
 [`from_be_bytes`]: #method.from_be_bytes
 [`from_le_bytes`]: #method.from_le_bytes
-
+",
+$from_xe_bytes_doc,
+"
 # Examples
 
 ```
@@ -3987,7 +4030,7 @@ fn read_ne_", stringify!($SelfT), "(input: &mut &[u8]) -> ", stringify!($SelfT),
 #[lang = "u8"]
 impl u8 {
     uint_impl! { u8, u8, 8, 255, "", "", 2, "0x82", "0xa", "0x12", "0x12", "0x48", "[0x12]",
-        "[0x12]" }
+        "[0x12]", "", "" }
 
 
     /// Checks if the value is within the ASCII range.
@@ -4123,8 +4166,8 @@ impl u8 {
 
     /// Checks if the value is an ASCII alphabetic character:
     ///
-    /// - U+0041 'A' ... U+005A 'Z', or
-    /// - U+0061 'a' ... U+007A 'z'.
+    /// - U+0041 'A' ..= U+005A 'Z', or
+    /// - U+0061 'a' ..= U+007A 'z'.
     ///
     /// # Examples
     ///
@@ -4159,7 +4202,7 @@ impl u8 {
     }
 
     /// Checks if the value is an ASCII uppercase character:
-    /// U+0041 'A' ... U+005A 'Z'.
+    /// U+0041 'A' ..= U+005A 'Z'.
     ///
     /// # Examples
     ///
@@ -4194,7 +4237,7 @@ impl u8 {
     }
 
     /// Checks if the value is an ASCII lowercase character:
-    /// U+0061 'a' ... U+007A 'z'.
+    /// U+0061 'a' ..= U+007A 'z'.
     ///
     /// # Examples
     ///
@@ -4230,9 +4273,9 @@ impl u8 {
 
     /// Checks if the value is an ASCII alphanumeric character:
     ///
-    /// - U+0041 'A' ... U+005A 'Z', or
-    /// - U+0061 'a' ... U+007A 'z', or
-    /// - U+0030 '0' ... U+0039 '9'.
+    /// - U+0041 'A' ..= U+005A 'Z', or
+    /// - U+0061 'a' ..= U+007A 'z', or
+    /// - U+0030 '0' ..= U+0039 '9'.
     ///
     /// # Examples
     ///
@@ -4267,7 +4310,7 @@ impl u8 {
     }
 
     /// Checks if the value is an ASCII decimal digit:
-    /// U+0030 '0' ... U+0039 '9'.
+    /// U+0030 '0' ..= U+0039 '9'.
     ///
     /// # Examples
     ///
@@ -4303,9 +4346,9 @@ impl u8 {
 
     /// Checks if the value is an ASCII hexadecimal digit:
     ///
-    /// - U+0030 '0' ... U+0039 '9', or
-    /// - U+0041 'A' ... U+0046 'F', or
-    /// - U+0061 'a' ... U+0066 'f'.
+    /// - U+0030 '0' ..= U+0039 '9', or
+    /// - U+0041 'A' ..= U+0046 'F', or
+    /// - U+0061 'a' ..= U+0066 'f'.
     ///
     /// # Examples
     ///
@@ -4341,10 +4384,10 @@ impl u8 {
 
     /// Checks if the value is an ASCII punctuation character:
     ///
-    /// - U+0021 ... U+002F `! " # $ % & ' ( ) * + , - . /`, or
-    /// - U+003A ... U+0040 `: ; < = > ? @`, or
-    /// - U+005B ... U+0060 ``[ \ ] ^ _ ` ``, or
-    /// - U+007B ... U+007E `{ | } ~`
+    /// - U+0021 ..= U+002F `! " # $ % & ' ( ) * + , - . /`, or
+    /// - U+003A ..= U+0040 `: ; < = > ? @`, or
+    /// - U+005B ..= U+0060 ``[ \ ] ^ _ ` ``, or
+    /// - U+007B ..= U+007E `{ | } ~`
     ///
     /// # Examples
     ///
@@ -4379,7 +4422,7 @@ impl u8 {
     }
 
     /// Checks if the value is an ASCII graphic character:
-    /// U+0021 '!' ... U+007E '~'.
+    /// U+0021 '!' ..= U+007E '~'.
     ///
     /// # Examples
     ///
@@ -4466,7 +4509,7 @@ impl u8 {
     }
 
     /// Checks if the value is an ASCII control character:
-    /// U+0000 NUL ... U+001F UNIT SEPARATOR, or U+007F DELETE.
+    /// U+0000 NUL ..= U+001F UNIT SEPARATOR, or U+007F DELETE.
     /// Note that most ASCII whitespace characters are control
     /// characters, but SPACE is not.
     ///
@@ -4506,13 +4549,13 @@ impl u8 {
 #[lang = "u16"]
 impl u16 {
     uint_impl! { u16, u16, 16, 65535, "", "", 4, "0xa003", "0x3a", "0x1234", "0x3412", "0x2c48",
-        "[0x34, 0x12]", "[0x12, 0x34]" }
+        "[0x34, 0x12]", "[0x12, 0x34]", "", "" }
 }
 
 #[lang = "u32"]
 impl u32 {
     uint_impl! { u32, u32, 32, 4294967295, "", "", 8, "0x10000b3", "0xb301", "0x12345678",
-        "0x78563412", "0x1e6a2c48", "[0x78, 0x56, 0x34, 0x12]", "[0x12, 0x34, 0x56, 0x78]" }
+        "0x78563412", "0x1e6a2c48", "[0x78, 0x56, 0x34, 0x12]", "[0x12, 0x34, 0x56, 0x78]", "", "" }
 }
 
 #[lang = "u64"]
@@ -4520,7 +4563,8 @@ impl u64 {
     uint_impl! { u64, u64, 64, 18446744073709551615, "", "", 12, "0xaa00000000006e1", "0x6e10aa",
         "0x1234567890123456", "0x5634129078563412", "0x6a2c48091e6a2c48",
         "[0x56, 0x34, 0x12, 0x90, 0x78, 0x56, 0x34, 0x12]",
-        "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]" }
+        "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]",
+        "", ""}
 }
 
 #[lang = "u128"]
@@ -4531,20 +4575,23 @@ impl u128 {
         "[0x12, 0x90, 0x78, 0x56, 0x34, 0x12, 0x90, 0x78, \
           0x56, 0x34, 0x12, 0x90, 0x78, 0x56, 0x34, 0x12]",
         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56, \
-          0x78, 0x90, 0x12, 0x34, 0x56, 0x78, 0x90, 0x12]" }
+          0x78, 0x90, 0x12, 0x34, 0x56, 0x78, 0x90, 0x12]",
+         "", ""}
 }
 
 #[cfg(target_pointer_width = "16")]
 #[lang = "usize"]
 impl usize {
     uint_impl! { usize, u16, 16, 65535, "", "", 4, "0xa003", "0x3a", "0x1234", "0x3412", "0x2c48",
-        "[0x34, 0x12]", "[0x12, 0x34]" }
+        "[0x34, 0x12]", "[0x12, 0x34]",
+        usize_isize_to_xe_bytes_doc!(), usize_isize_from_xe_bytes_doc!() }
 }
 #[cfg(target_pointer_width = "32")]
 #[lang = "usize"]
 impl usize {
     uint_impl! { usize, u32, 32, 4294967295, "", "", 8, "0x10000b3", "0xb301", "0x12345678",
-        "0x78563412", "0x1e6a2c48", "[0x78, 0x56, 0x34, 0x12]", "[0x12, 0x34, 0x56, 0x78]" }
+        "0x78563412", "0x1e6a2c48", "[0x78, 0x56, 0x34, 0x12]", "[0x12, 0x34, 0x56, 0x78]",
+        usize_isize_to_xe_bytes_doc!(), usize_isize_from_xe_bytes_doc!() }
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -4553,7 +4600,8 @@ impl usize {
     uint_impl! { usize, u64, 64, 18446744073709551615, "", "", 12, "0xaa00000000006e1", "0x6e10aa",
         "0x1234567890123456", "0x5634129078563412", "0x6a2c48091e6a2c48",
         "[0x56, 0x34, 0x12, 0x90, 0x78, 0x56, 0x34, 0x12]",
-         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]" }
+         "[0x12, 0x34, 0x56, 0x78, 0x90, 0x12, 0x34, 0x56]",
+        usize_isize_to_xe_bytes_doc!(), usize_isize_from_xe_bytes_doc!() }
 }
 
 /// A classification of floating point numbers.

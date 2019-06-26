@@ -26,8 +26,8 @@ use std::{cmp, fs};
 
 use syntax::ast;
 use syntax::attr;
-use syntax::ext::base::SyntaxExtension;
-use syntax::symbol::Symbol;
+use syntax::ext::base::{SyntaxExtension, SyntaxExtensionKind};
+use syntax::symbol::{Symbol, sym};
 use syntax::visit;
 use syntax::{span_err, span_fatal};
 use syntax_pos::{Span, DUMMY_SP};
@@ -95,7 +95,7 @@ enum LoadError<'a> {
 impl<'a> LoadError<'a> {
     fn report(self) -> ! {
         match self {
-            LoadError::LocatorError(mut locate_ctxt) => locate_ctxt.report_errs(),
+            LoadError::LocatorError(locate_ctxt) => locate_ctxt.report_errs(),
         }
     }
 }
@@ -162,7 +162,7 @@ impl<'a> CrateLoader<'a> {
 
     fn verify_no_symbol_conflicts(&self,
                                   span: Span,
-                                  root: &CrateRoot) {
+                                  root: &CrateRoot<'_>) {
         // Check for (potential) conflicts with the local crate
         if self.local_crate_name == root.name &&
            self.sess.local_crate_disambiguator() == root.disambiguator {
@@ -236,7 +236,7 @@ impl<'a> CrateLoader<'a> {
                 let host_lib = host_lib.unwrap();
                 self.load_derive_macros(
                     &host_lib.metadata.get_root(),
-                    host_lib.dylib.clone().map(|p| p.0),
+                    host_lib.dylib.map(|p| p.0),
                     span
                 )
             } else {
@@ -289,13 +289,13 @@ impl<'a> CrateLoader<'a> {
         (cnum, cmeta)
     }
 
-    fn load_proc_macro<'b> (
+    fn load_proc_macro<'b>(
         &mut self,
         locate_ctxt: &mut locator::Context<'b>,
         path_kind: PathKind,
     ) -> Option<(LoadResult, Option<Library>)>
     where
-        'a: 'b
+        'a: 'b,
     {
         // Use a new locator Context so trying to load a proc macro doesn't affect the error
         // message we emit
@@ -365,8 +365,8 @@ impl<'a> CrateLoader<'a> {
                 span,
                 ident,
                 crate_name: name,
-                hash: hash.map(|a| &*a),
-                extra_filename: extra_filename,
+                hash,
+                extra_filename,
                 filesearch: self.sess.target_filesearch(path_kind),
                 target: &self.sess.target.target,
                 triple: self.sess.opts.target_triple.clone(),
@@ -476,7 +476,7 @@ impl<'a> CrateLoader<'a> {
     // Go through the crate metadata and load any crates that it references
     fn resolve_crate_deps(&mut self,
                           root: &Option<CratePaths>,
-                          crate_root: &CrateRoot,
+                          crate_root: &CrateRoot<'_>,
                           metadata: &MetadataBlob,
                           krate: CrateNum,
                           span: Span,
@@ -582,7 +582,7 @@ impl<'a> CrateLoader<'a> {
     /// implemented as dynamic libraries, but we have a possible future where
     /// custom derive (and other macro-1.1 style features) are implemented via
     /// executables and custom IPC.
-    fn load_derive_macros(&mut self, root: &CrateRoot, dylib: Option<PathBuf>, span: Span)
+    fn load_derive_macros(&mut self, root: &CrateRoot<'_>, dylib: Option<PathBuf>, span: Span)
                           -> Vec<(ast::Name, Lrc<SyntaxExtension>)> {
         use std::{env, mem};
         use crate::dynamic_lib::DynamicLibrary;
@@ -611,33 +611,31 @@ impl<'a> CrateLoader<'a> {
         };
 
         let extensions = decls.iter().map(|&decl| {
-            match decl {
+            let (name, kind, helper_attrs) = match decl {
                 ProcMacro::CustomDerive { trait_name, attributes, client } => {
-                    let attrs = attributes.iter().cloned().map(Symbol::intern).collect::<Vec<_>>();
-                    (trait_name, SyntaxExtension::ProcMacroDerive(
-                        Box::new(ProcMacroDerive {
-                            client,
-                            attrs: attrs.clone(),
-                        }),
-                        attrs,
-                        root.edition,
-                    ))
+                    let helper_attrs =
+                        attributes.iter().cloned().map(Symbol::intern).collect::<Vec<_>>();
+                    (
+                        trait_name,
+                        SyntaxExtensionKind::Derive(Box::new(ProcMacroDerive {
+                            client, attrs: helper_attrs.clone()
+                        })),
+                        helper_attrs,
+                    )
                 }
-                ProcMacro::Attr { name, client } => {
-                    (name, SyntaxExtension::AttrProcMacro(
-                        Box::new(AttrProcMacro { client }),
-                        root.edition,
-                    ))
-                }
-                ProcMacro::Bang { name, client } => {
-                    (name, SyntaxExtension::ProcMacro {
-                        expander: Box::new(BangProcMacro { client }),
-                        allow_internal_unstable: None,
-                        edition: root.edition,
-                    })
-                }
-            }
-        }).map(|(name, ext)| (Symbol::intern(name), Lrc::new(ext))).collect();
+                ProcMacro::Attr { name, client } => (
+                    name, SyntaxExtensionKind::Attr(Box::new(AttrProcMacro { client })), Vec::new()
+                ),
+                ProcMacro::Bang { name, client } => (
+                    name, SyntaxExtensionKind::Bang(Box::new(BangProcMacro { client })), Vec::new()
+                )
+            };
+
+            (Symbol::intern(name), Lrc::new(SyntaxExtension {
+                helper_attrs,
+                ..SyntaxExtension::default(kind, root.edition)
+            }))
+        }).collect();
 
         // Intentionally leak the dynamic library. We can't ever unload it
         // since the library can make things that will live arbitrarily long.
@@ -650,9 +648,8 @@ impl<'a> CrateLoader<'a> {
     /// SVH and DefIndex of the registrar function.
     pub fn find_plugin_registrar(&mut self,
                                  span: Span,
-                                 name: &str)
+                                 name: Symbol)
                                  -> Option<(PathBuf, CrateDisambiguator)> {
-        let name = Symbol::intern(name);
         let ekrate = self.read_extension_crate(span, name, name);
 
         if ekrate.target_only {
@@ -704,7 +701,7 @@ impl<'a> CrateLoader<'a> {
         let desired_strategy = self.sess.panic_strategy();
         let mut runtime_found = false;
         let mut needs_panic_runtime = attr::contains_name(&krate.attrs,
-                                                          "needs_panic_runtime");
+                                                          sym::needs_panic_runtime);
 
         self.cstore.iter_crate_data(|cnum, data| {
             needs_panic_runtime = needs_panic_runtime ||
@@ -783,7 +780,7 @@ impl<'a> CrateLoader<'a> {
                 Sanitizer::Leak => LSAN_SUPPORTED_TARGETS,
                 Sanitizer::Memory => MSAN_SUPPORTED_TARGETS,
             };
-            if !supported_targets.contains(&&*self.sess.target.target.llvm_target) {
+            if !supported_targets.contains(&&*self.sess.opts.target_triple.triple()) {
                 self.sess.err(&format!("{:?}Sanitizer only works with the `{}` target",
                     sanitizer,
                     supported_targets.join("` or `")
@@ -794,7 +791,7 @@ impl<'a> CrateLoader<'a> {
             // firstyear 2017 - during testing I was unable to access an OSX machine
             // to make this work on different crate types. As a result, today I have
             // only been able to test and support linux as a target.
-            if self.sess.target.target.llvm_target == "x86_64-unknown-linux-gnu" {
+            if self.sess.opts.target_triple.triple() == "x86_64-unknown-linux-gnu" {
                 if !self.sess.crate_types.borrow().iter().all(|ct| {
                     match *ct {
                         // Link the runtime
@@ -837,7 +834,7 @@ impl<'a> CrateLoader<'a> {
 
             let mut uses_std = false;
             self.cstore.iter_crate_data(|_, data| {
-                if data.name == "std" {
+                if data.name == sym::std {
                     uses_std = true;
                 }
             });
@@ -898,7 +895,7 @@ impl<'a> CrateLoader<'a> {
         // about through the `#![needs_allocator]` attribute and is typically
         // written down in liballoc.
         let mut needs_allocator = attr::contains_name(&krate.attrs,
-                                                      "needs_allocator");
+                                                      sym::needs_allocator);
         self.cstore.iter_crate_data(|_, data| {
             needs_allocator = needs_allocator || data.root.needs_allocator;
         });
@@ -964,7 +961,7 @@ impl<'a> CrateLoader<'a> {
         // allocator. At this point our allocator request is typically fulfilled
         // by the standard library, denoted by the `#![default_lib_allocator]`
         // attribute.
-        let mut has_default = attr::contains_name(&krate.attrs, "default_lib_allocator");
+        let mut has_default = attr::contains_name(&krate.attrs, sym::default_lib_allocator);
         self.cstore.iter_crate_data(|_, data| {
             if data.root.has_default_lib_allocator {
                 has_default = true;
@@ -987,7 +984,7 @@ impl<'a> CrateLoader<'a> {
 
             impl<'ast> visit::Visitor<'ast> for Finder {
                 fn visit_item(&mut self, i: &'ast ast::Item) {
-                    if attr::contains_name(&i.attrs, "global_allocator") {
+                    if attr::contains_name(&i.attrs, sym::global_allocator) {
                         self.0 = true;
                     }
                     visit::walk_item(self, i)
@@ -1065,7 +1062,7 @@ impl<'a> CrateLoader<'a> {
                     }
                     None => item.ident.name,
                 };
-                let dep_kind = if attr::contains_name(&item.attrs, "no_link") {
+                let dep_kind = if attr::contains_name(&item.attrs, sym::no_link) {
                     DepKind::UnexportedMacrosOnly
                 } else {
                     DepKind::Explicit
