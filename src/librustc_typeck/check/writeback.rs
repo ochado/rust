@@ -9,10 +9,8 @@ use rustc::hir::def_id::{DefId, DefIndex};
 use rustc::hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc::infer::InferCtxt;
 use rustc::ty::adjustment::{Adjust, Adjustment, PointerCast};
-use rustc::ty::fold::{BottomUpFolder, TypeFoldable, TypeFolder};
-use rustc::ty::subst::UnpackedKind;
+use rustc::ty::fold::{TypeFoldable, TypeFolder};
 use rustc::ty::{self, Ty, TyCtxt};
-use rustc::mir::interpret::ConstValue;
 use rustc::util::nodemap::DefIdSet;
 use rustc_data_structures::sync::Lrc;
 use std::mem;
@@ -34,7 +32,7 @@ use syntax_pos::Span;
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub fn resolve_type_vars_in_body(&self, body: &'tcx hir::Body) -> &'tcx ty::TypeckTables<'tcx> {
         let item_id = self.tcx.hir().body_owner(body.id());
-        let item_def_id = self.tcx.hir().local_def_id_from_hir_id(item_id);
+        let item_def_id = self.tcx.hir().local_def_id(item_id);
 
         // This attribute causes us to dump some writeback information
         // in the form of errors, which is uSymbolfor unit tests.
@@ -363,10 +361,8 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
     }
 
     fn visit_free_region_map(&mut self) {
-        let free_region_map = self.tcx()
-            .lift_to_global(&self.fcx.tables.borrow().free_region_map);
-        let free_region_map = free_region_map.expect("all regions in free-region-map are global");
-        self.tables.free_region_map = free_region_map;
+        self.tables.free_region_map = self.fcx.tables.borrow().free_region_map.clone();
+        debug_assert!(!self.tables.free_region_map.elements().any(|r| r.has_local_value()));
     }
 
     fn visit_user_provided_tys(&mut self) {
@@ -381,12 +377,10 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
                 local_id,
             };
 
-            let c_ty = if let Some(c_ty) = self.tcx().lift_to_global(c_ty) {
-                c_ty
-            } else {
+            if cfg!(debug_assertions) && c_ty.has_local_value() {
                 span_bug!(
                     hir_id.to_span(self.fcx.tcx),
-                    "writeback: `{:?}` missing from the global type context",
+                    "writeback: `{:?}` is a local value",
                     c_ty
                 );
             };
@@ -423,12 +417,10 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
         debug_assert_eq!(fcx_tables.local_id_root, self.tables.local_id_root);
 
         for (&def_id, c_sig) in fcx_tables.user_provided_sigs.iter() {
-            let c_sig = if let Some(c_sig) = self.tcx().lift_to_global(c_sig) {
-                c_sig
-            } else {
+            if cfg!(debug_assertions) && c_sig.has_local_value() {
                 span_bug!(
                     self.fcx.tcx.hir().span_if_local(def_id).unwrap(),
-                    "writeback: `{:?}` missing from the global type context",
+                    "writeback: `{:?}` is a local value",
                     c_sig
                 );
             };
@@ -446,141 +438,20 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
 
             debug_assert!(!instantiated_ty.has_escaping_bound_vars());
 
-            let generics = self.tcx().generics_of(def_id);
+            // Prevent:
+            // * `fn foo<T>() -> Foo<T>`
+            // * `fn foo<T: Bound + Other>() -> Foo<T>`
+            // from being defining.
 
-            let definition_ty = if generics.parent.is_some() {
-                // `impl Trait`
-                self.fcx.infer_opaque_definition_from_instantiation(
-                    def_id,
-                    opaque_defn,
-                    instantiated_ty,
-                )
-            } else {
-                // Prevent:
-                // * `fn foo<T>() -> Foo<T>`
-                // * `fn foo<T: Bound + Other>() -> Foo<T>`
-                // from being defining.
-
-                // Also replace all generic params with the ones from the existential type
-                // definition so that
-                // ```rust
-                // existential type Foo<T>: 'static;
-                // fn foo<U>() -> Foo<U> { .. }
-                // ```
-                // figures out the concrete type with `U`, but the stored type is with `T`.
-                instantiated_ty.fold_with(&mut BottomUpFolder {
-                    tcx: self.tcx().global_tcx(),
-                    ty_op: |ty| {
-                        trace!("checking type {:?}", ty);
-                        // Find a type parameter.
-                        if let ty::Param(..) = ty.sty {
-                            // Look it up in the substitution list.
-                            assert_eq!(opaque_defn.substs.len(), generics.params.len());
-                            for (subst, param) in opaque_defn.substs.iter().zip(&generics.params) {
-                                if let UnpackedKind::Type(subst) = subst.unpack() {
-                                    if subst == ty {
-                                        // Found it in the substitution list; replace with the
-                                        // parameter from the existential type.
-                                        return self.tcx()
-                                            .global_tcx()
-                                            .mk_ty_param(param.index, param.name);
-                                    }
-                                }
-                            }
-                            self.tcx()
-                                .sess
-                                .struct_span_err(
-                                    span,
-                                    &format!(
-                                        "type parameter `{}` is part of concrete type but not used \
-                                         in parameter list for existential type",
-                                        ty,
-                                    ),
-                                )
-                                .emit();
-                            return self.tcx().types.err;
-                        }
-                        ty
-                    },
-                    lt_op: |region| {
-                        match region {
-                            // Skip static and bound regions: they don't require substitution.
-                            ty::ReStatic | ty::ReLateBound(..) => region,
-                            _ => {
-                                trace!("checking {:?}", region);
-                                for (subst, p) in opaque_defn.substs.iter().zip(&generics.params) {
-                                    if let UnpackedKind::Lifetime(subst) = subst.unpack() {
-                                        if subst == region {
-                                            // Found it in the substitution list; replace with the
-                                            // parameter from the existential type.
-                                            let reg = ty::EarlyBoundRegion {
-                                                def_id: p.def_id,
-                                                index: p.index,
-                                                name: p.name,
-                                            };
-                                            trace!("replace {:?} with {:?}", region, reg);
-                                            return self.tcx()
-                                                .global_tcx()
-                                                .mk_region(ty::ReEarlyBound(reg));
-                                        }
-                                    }
-                                }
-                                trace!("opaque_defn: {:#?}", opaque_defn);
-                                trace!("generics: {:#?}", generics);
-                                self.tcx()
-                                    .sess
-                                    .struct_span_err(
-                                        span,
-                                        "non-defining existential type use in defining scope",
-                                    )
-                                    .span_label(
-                                        span,
-                                        format!(
-                                            "lifetime `{}` is part of concrete type but not used \
-                                             in parameter list of existential type",
-                                            region,
-                                        ),
-                                    )
-                                    .emit();
-                                self.tcx().global_tcx().mk_region(ty::ReStatic)
-                            }
-                        }
-                    },
-                    ct_op: |ct| {
-                        trace!("checking const {:?}", ct);
-                        // Find a const parameter
-                        if let ConstValue::Param(..) = ct.val {
-                            // look it up in the substitution list
-                            assert_eq!(opaque_defn.substs.len(), generics.params.len());
-                            for (subst, param) in opaque_defn.substs.iter()
-                                                                    .zip(&generics.params) {
-                                if let UnpackedKind::Const(subst) = subst.unpack() {
-                                    if subst == ct {
-                                        // found it in the substitution list, replace with the
-                                        // parameter from the existential type
-                                        return self.tcx()
-                                            .global_tcx()
-                                            .mk_const_param(param.index, param.name, ct.ty);
-                                    }
-                                }
-                            }
-                            self.tcx()
-                                .sess
-                                .struct_span_err(
-                                    span,
-                                    &format!(
-                                        "const parameter `{}` is part of concrete type but not \
-                                            used in parameter list for existential type",
-                                        ct,
-                                    ),
-                                )
-                                .emit();
-                            return self.tcx().consts.err;
-                        }
-                        ct
-                    }
-                })
-            };
+            // Also replace all generic params with the ones from the existential type
+            // definition so that
+            // ```rust
+            // existential type Foo<T>: 'static;
+            // fn foo<U>() -> Foo<U> { .. }
+            // ```
+            // figures out the concrete type with `U`, but the stored type is with `T`.
+            let definition_ty = self.fcx.infer_opaque_definition_from_instantiation(
+                def_id, opaque_defn, instantiated_ty, span);
 
             if let ty::Opaque(defin_ty_def_id, _substs) = definition_ty.sty {
                 if def_id == defin_ty_def_id {
@@ -592,10 +463,10 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
                 }
             }
 
-            if let Some(substs) = self.tcx().lift_to_global(&opaque_defn.substs) {
+            if !opaque_defn.substs.has_local_value() {
                 let new = ty::ResolvedOpaqueTy {
                     concrete_type: definition_ty,
-                    substs,
+                    substs: opaque_defn.substs,
                 };
 
                 let old = self.tables
@@ -617,7 +488,7 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             } else {
                 self.tcx().sess.delay_span_bug(
                     span,
-                    "cannot lift `opaque_defn` substs to global type context",
+                    "`opaque_defn` is a local value",
                 );
             }
         }
@@ -652,7 +523,7 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
         let n_ty = self.fcx.node_ty(hir_id);
         let n_ty = self.resolve(&n_ty, &span);
         self.write_ty_to_tables(hir_id, n_ty);
-        debug!("Node {:?} has type {:?}", hir_id, n_ty);
+        debug!("node {:?} has type {:?}", hir_id, n_ty);
 
         // Resolve any substitutions
         if let Some(substs) = self.fcx.tables.borrow().node_substs_opt(hir_id) {
@@ -671,13 +542,13 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             .remove(hir_id);
         match adjustment {
             None => {
-                debug!("No adjustments for node {:?}", hir_id);
+                debug!("no adjustments for node {:?}", hir_id);
             }
 
             Some(adjustment) => {
                 let resolved_adjustment = self.resolve(&adjustment, &span);
                 debug!(
-                    "Adjustments for node {:?}: {:?}",
+                    "adjustments for node {:?}: {:?}",
                     hir_id, resolved_adjustment
                 );
                 self.tables
@@ -695,7 +566,7 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             .remove(hir_id);
         match adjustment {
             None => {
-                debug!("No pat_adjustments for node {:?}", hir_id);
+                debug!("no pat_adjustments for node {:?}", hir_id);
             }
 
             Some(adjustment) => {
@@ -743,20 +614,19 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
         }
     }
 
-    fn resolve<T>(&self, x: &T, span: &dyn Locatable) -> T::Lifted
+    fn resolve<T>(&self, x: &T, span: &dyn Locatable) -> T
     where
-        T: TypeFoldable<'tcx> + ty::Lift<'tcx>,
+        T: TypeFoldable<'tcx>,
     {
         let x = x.fold_with(&mut Resolver::new(self.fcx, span, self.body));
-        if let Some(lifted) = self.tcx().lift_to_global(&x) {
-            lifted
-        } else {
+        if cfg!(debug_assertions) && x.has_local_value() {
             span_bug!(
                 span.to_span(self.fcx.tcx),
-                "writeback: `{:?}` missing from the global type context",
+                "writeback: `{:?}` is a local value",
                 x
             );
         }
+        x
     }
 }
 

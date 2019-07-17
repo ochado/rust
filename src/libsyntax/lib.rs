@@ -8,18 +8,17 @@
        test(attr(deny(warnings))))]
 
 #![deny(rust_2018_idioms)]
-#![deny(internal)]
 #![deny(unused_lifetimes)]
 
 #![feature(bind_by_move_pattern_guards)]
+#![feature(box_syntax)]
 #![feature(const_fn)]
 #![feature(const_transmute)]
 #![feature(crate_visibility_modifier)]
 #![feature(label_break_value)]
+#![feature(mem_take)]
 #![feature(nll)]
-#![feature(rustc_attrs)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(step_trait)]
 #![feature(try_trait)]
 #![feature(unicode_internals)]
 
@@ -161,6 +160,7 @@ pub mod visit;
 pub mod print {
     pub mod pp;
     pub mod pprust;
+    mod helpers;
 }
 
 pub mod ext {

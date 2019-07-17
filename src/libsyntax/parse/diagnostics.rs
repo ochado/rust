@@ -15,6 +15,7 @@ use errors::{Applicability, DiagnosticBuilder, DiagnosticId};
 use rustc_data_structures::fx::FxHashSet;
 use syntax_pos::{Span, DUMMY_SP, MultiSpan};
 use log::{debug, trace};
+use std::mem;
 
 /// Creates a placeholder argument.
 crate fn dummy_arg(ident: Ident) -> Arg {
@@ -611,14 +612,12 @@ impl<'a> Parser<'a> {
         match ty.node {
             TyKind::Rptr(ref lifetime, ref mut_ty) => {
                 let sum_with_parens = pprust::to_string(|s| {
-                    use crate::print::pprust::PrintState;
-
-                    s.s.word("&")?;
-                    s.print_opt_lifetime(lifetime)?;
-                    s.print_mutability(mut_ty.mutbl)?;
-                    s.popen()?;
-                    s.print_type(&mut_ty.ty)?;
-                    s.print_type_bounds(" +", &bounds)?;
+                    s.s.word("&");
+                    s.print_opt_lifetime(lifetime);
+                    s.print_mutability(mut_ty.mutbl);
+                    s.popen();
+                    s.print_type(&mut_ty.ty);
+                    s.print_type_bounds(" +", &bounds);
                     s.pclose()
                 });
                 err.span_suggestion(
@@ -785,6 +784,42 @@ impl<'a> Parser<'a> {
         Err(err)
     }
 
+    crate fn parse_semi_or_incorrect_foreign_fn_body(
+        &mut self,
+        ident: &Ident,
+        extern_sp: Span,
+    ) -> PResult<'a, ()> {
+        if self.token != token::Semi {
+            // this might be an incorrect fn definition (#62109)
+            let parser_snapshot = self.clone();
+            match self.parse_inner_attrs_and_block() {
+                Ok((_, body)) => {
+                    self.struct_span_err(ident.span, "incorrect `fn` inside `extern` block")
+                        .span_label(ident.span, "can't have a body")
+                        .span_label(body.span, "this body is invalid here")
+                        .span_label(
+                            extern_sp,
+                            "`extern` blocks define existing foreign functions and `fn`s \
+                             inside of them cannot have a body")
+                        .help("you might have meant to write a function accessible through ffi, \
+                               which can be done by writing `extern fn` outside of the \
+                               `extern` block")
+                        .note("for more information, visit \
+                               https://doc.rust-lang.org/std/keyword.extern.html")
+                        .emit();
+                }
+                Err(mut err) => {
+                    err.cancel();
+                    mem::replace(self, parser_snapshot);
+                    self.expect(&token::Semi)?;
+                }
+            }
+        } else {
+            self.bump();
+        }
+        Ok(())
+    }
+
     /// Consume alternative await syntaxes like `await <expr>`, `await? <expr>`, `await(<expr>)`
     /// and `await { <expr> }`.
     crate fn parse_incorrect_await_syntax(
@@ -884,7 +919,7 @@ impl<'a> Parser<'a> {
                     Applicability::MaybeIncorrect,
                 );
             } else {
-                err.note("#![feature(type_ascription)] lets you annotate an \
+                err.note("`#![feature(type_ascription)]` lets you annotate an \
                           expression with a type: `<expr>: <type>`")
                     .span_note(
                         lhs_span,
@@ -942,7 +977,7 @@ impl<'a> Parser<'a> {
                 //  {foo(bar {}}
                 //      -      ^
                 //      |      |
-                //      |      help: `)` may belong here (FIXME: #58270)
+                //      |      help: `)` may belong here
                 //      |
                 //      unclosed delimiter
                 if let Some(sp) = unmatched.unclosed_span {

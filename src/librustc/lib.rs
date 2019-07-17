@@ -29,12 +29,13 @@
 #![doc(html_root_url = "https://doc.rust-lang.org/nightly/")]
 
 #![deny(rust_2018_idioms)]
-#![deny(internal)]
 #![deny(unused_lifetimes)]
 
 #![feature(arbitrary_self_types)]
 #![feature(box_patterns)]
 #![feature(box_syntax)]
+#![feature(const_fn)]
+#![feature(const_transmute)]
 #![feature(core_intrinsics)]
 #![feature(drain_filter)]
 #![feature(inner_deref)]
@@ -45,11 +46,9 @@
 #![feature(extern_types)]
 #![feature(nll)]
 #![feature(non_exhaustive)]
-#![feature(proc_macro_internals)]
 #![feature(optin_builtin_traits)]
 #![feature(range_is_empty)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(rustc_attrs)]
 #![feature(slice_patterns)]
 #![feature(specialization)]
 #![feature(unboxed_closures)]
@@ -57,7 +56,6 @@
 #![feature(trace_macros)]
 #![feature(trusted_len)]
 #![feature(vec_remove_item)]
-#![feature(step_trait)]
 #![feature(stmt_expr_attributes)]
 #![feature(integer_atomics)]
 #![feature(test)]
@@ -65,6 +63,7 @@
 #![feature(crate_visibility_modifier)]
 #![feature(proc_macro_hygiene)]
 #![feature(log_syntax)]
+#![feature(mem_take)]
 
 #![recursion_limit="512"]
 
@@ -88,10 +87,8 @@ extern crate serialize as rustc_serialize;
 
 #[macro_use] extern crate smallvec;
 
-// Note that librustc doesn't actually depend on these crates, see the note in
-// `Cargo.toml` for this crate about why these are here.
-#[allow(unused_extern_crates)]
-extern crate flate2;
+// Use the test crate here so we depend on getopts through it. This allow tools to link to both
+// librustc_driver and libtest.
 #[allow(unused_extern_crates)]
 extern crate test;
 

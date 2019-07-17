@@ -6,7 +6,7 @@ pub use crate::symbol::{Ident, Symbol as Name};
 pub use crate::util::parser::ExprPrecedence;
 
 use crate::ext::hygiene::{Mark, SyntaxContext};
-use crate::parse::token;
+use crate::parse::token::{self, DelimToken};
 use crate::print::pprust;
 use crate::ptr::P;
 use crate::source_map::{dummy_spanned, respan, Spanned};
@@ -50,8 +50,14 @@ impl fmt::Debug for Lifetime {
             f,
             "lifetime({}: {})",
             self.id,
-            pprust::lifetime_to_string(self)
+            self
         )
+    }
+}
+
+impl fmt::Display for Lifetime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.ident.name.as_str())
     }
 }
 
@@ -1292,6 +1298,16 @@ impl Mac_ {
     }
 }
 
+impl MacDelimiter {
+    crate fn to_token(self) -> DelimToken {
+        match self {
+            MacDelimiter::Parenthesis => DelimToken::Paren,
+            MacDelimiter::Bracket => DelimToken::Bracket,
+            MacDelimiter::Brace => DelimToken::Brace,
+        }
+    }
+}
+
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct MacroDef {
     pub tokens: TokenStream,
@@ -1832,7 +1848,7 @@ impl Arg {
                         lt,
                         MutTy {
                             ty: infer_ty,
-                            mutbl: mutbl,
+                            mutbl,
                         },
                     ),
                     span,
@@ -2120,7 +2136,7 @@ impl PolyTraitRef {
         PolyTraitRef {
             bound_generic_params: generic_params,
             trait_ref: TraitRef {
-                path: path,
+                path,
                 ref_id: DUMMY_NODE_ID,
             },
             span,

@@ -57,6 +57,8 @@ pub struct ParseSess {
     pub param_attr_spans: Lock<Vec<Span>>,
     // Places where `let` exprs were used and should be feature gated according to `let_chains`.
     pub let_chains_spans: Lock<Vec<Span>>,
+    // Places where `async || ..` exprs were used and should be feature gated.
+    pub async_closure_spans: Lock<Vec<Span>>,
 }
 
 impl ParseSess {
@@ -84,6 +86,7 @@ impl ParseSess {
             ambiguous_block_expr_parse: Lock::new(FxHashMap::default()),
             param_attr_spans: Lock::new(Vec::new()),
             let_chains_spans: Lock::new(Vec::new()),
+            async_closure_spans: Lock::new(Vec::new()),
         }
     }
 
@@ -305,7 +308,7 @@ pub fn maybe_file_to_stream(
     source_file: Lrc<SourceFile>,
     override_span: Option<Span>,
 ) -> Result<(TokenStream, Vec<lexer::UnmatchedBrace>), Vec<Diagnostic>> {
-    let srdr = lexer::StringReader::new_or_buffered_errs(sess, source_file, override_span)?;
+    let srdr = lexer::StringReader::new(sess, source_file, override_span);
     let (token_trees, unmatched_braces) = srdr.into_token_trees();
 
     match token_trees {

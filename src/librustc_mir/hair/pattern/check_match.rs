@@ -18,15 +18,15 @@ use rustc_errors::{Applicability, DiagnosticBuilder};
 use rustc::hir::def::*;
 use rustc::hir::def_id::DefId;
 use rustc::hir::intravisit::{self, Visitor, NestedVisitorMap};
+use rustc::hir::ptr::P;
 use rustc::hir::{self, Pat, PatKind};
 
 use smallvec::smallvec;
 use std::slice;
 
-use syntax::ptr::P;
 use syntax_pos::{Span, DUMMY_SP, MultiSpan};
 
-pub(crate) fn check_match<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) {
+pub(crate) fn check_match(tcx: TyCtxt<'_>, def_id: DefId) {
     let body_id = if let Some(id) = tcx.hir().as_local_hir_id(def_id) {
         tcx.hir().body_owned_by(id)
     } else {
@@ -43,7 +43,7 @@ pub(crate) fn check_match<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) {
     }.visit_body(tcx.hir().body(body_id));
 }
 
-fn create_e0004<'a>(sess: &'a Session, sp: Span, error_message: String) -> DiagnosticBuilder<'a> {
+fn create_e0004(sess: &Session, sp: Span, error_message: String) -> DiagnosticBuilder<'_> {
     struct_span_err!(sess, sp, E0004, "{}", &error_message)
 }
 
@@ -170,6 +170,7 @@ impl<'a, 'tcx> MatchVisitor<'a, 'tcx> {
                     let mut patcx = PatternContext::new(self.tcx,
                                                         self.param_env.and(self.identity_substs),
                                                         self.tables);
+                    patcx.include_lint_checks();
                     let pattern = expand_pattern(cx, patcx.lower_pattern(&pat));
                     if !patcx.errors.is_empty() {
                         patcx.report_inlining_errors(pat.span);
@@ -266,6 +267,7 @@ impl<'a, 'tcx> MatchVisitor<'a, 'tcx> {
             let mut patcx = PatternContext::new(self.tcx,
                                                 self.param_env.and(self.identity_substs),
                                                 self.tables);
+            patcx.include_lint_checks();
             let pattern = patcx.lower_pattern(pat);
             let pattern_ty = pattern.ty;
             let pats: Matrix<'_, '_> = vec![smallvec![
@@ -371,7 +373,8 @@ fn check_arms<'a, 'tcx>(
             match is_useful(cx, &seen, &v, LeaveOutWitness) {
                 NotUseful => {
                     match source {
-                        hir::MatchSource::IfDesugar { .. } => bug!(),
+                        hir::MatchSource::IfDesugar { .. } |
+                        hir::MatchSource::WhileDesugar => bug!(),
                         hir::MatchSource::IfLetDesugar { .. } => {
                             cx.tcx.lint_hir(
                                 lint::builtin::IRREFUTABLE_LET_PATTERNS,
@@ -576,7 +579,7 @@ fn check_legality_of_move_bindings(
                                            "cannot bind by-move into a pattern guard");
             err.span_label(p.span, "moves value into pattern guard");
             if cx.tcx.sess.opts.unstable_features.is_nightly_build() {
-                err.help("add #![feature(bind_by_move_pattern_guards)] to the \
+                err.help("add `#![feature(bind_by_move_pattern_guards)]` to the \
                           crate attributes to enable");
             }
             err.emit();
@@ -663,7 +666,7 @@ impl<'a, 'tcx> Delegate<'tcx> for MutationChecker<'a, 'tcx> {
                           "cannot mutably borrow in a pattern guard");
                 err.span_label(span, "borrowed mutably in pattern guard");
                 if self.cx.tcx.sess.opts.unstable_features.is_nightly_build() {
-                    err.help("add #![feature(bind_by_move_pattern_guards)] to the \
+                    err.help("add `#![feature(bind_by_move_pattern_guards)]` to the \
                               crate attributes to enable");
                 }
                 err.emit();

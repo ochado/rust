@@ -20,7 +20,7 @@ pub fn string_to_stream(source_str: String) -> TokenStream {
 }
 
 /// Map string to parser (via tts)
-pub fn string_to_parser<'a>(ps: &'a ParseSess, source_str: String) -> Parser<'a> {
+pub fn string_to_parser(ps: &ParseSess, source_str: String) -> Parser<'_> {
     new_parser_from_source_str(ps, PathBuf::from("bogofile").into(), source_str)
 }
 
@@ -34,7 +34,7 @@ fn with_error_checking_parse<'a, T, F>(s: String, ps: &'a ParseSess, f: F) -> T 
 }
 
 /// Parse a string, return a crate.
-pub fn string_to_crate (source_str : String) -> ast::Crate {
+pub fn string_to_crate(source_str : String) -> ast::Crate {
     let ps = ParseSess::new(FilePathMapping::empty());
     with_error_checking_parse(source_str, &ps, |p| {
         p.parse_crate_mod()
@@ -42,7 +42,7 @@ pub fn string_to_crate (source_str : String) -> ast::Crate {
 }
 
 /// Parse a string, return an expr
-pub fn string_to_expr (source_str : String) -> P<ast::Expr> {
+pub fn string_to_expr(source_str : String) -> P<ast::Expr> {
     let ps = ParseSess::new(FilePathMapping::empty());
     with_error_checking_parse(source_str, &ps, |p| {
         p.parse_expr()
@@ -50,7 +50,7 @@ pub fn string_to_expr (source_str : String) -> P<ast::Expr> {
 }
 
 /// Parse a string, return an item
-pub fn string_to_item (source_str : String) -> Option<P<ast::Item>> {
+pub fn string_to_item(source_str : String) -> Option<P<ast::Item>> {
     let ps = ParseSess::new(FilePathMapping::empty());
     with_error_checking_parse(source_str, &ps, |p| {
         p.parse_item()

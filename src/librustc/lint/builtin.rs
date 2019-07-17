@@ -5,10 +5,12 @@
 //! lints are all available in `rustc_lint::builtin`.
 
 use crate::lint::{LintPass, LateLintPass, LintArray};
+use crate::middle::stability;
 use crate::session::Session;
 use errors::{Applicability, DiagnosticBuilder};
 use syntax::ast;
 use syntax::source_map::Span;
+use syntax::symbol::Symbol;
 
 declare_lint! {
     pub EXCEEDING_BITSHIFTS,
@@ -346,14 +348,15 @@ declare_lint! {
     "outlives requirements can be inferred"
 }
 
+declare_lint! {
+    pub INDIRECT_STRUCTURAL_MATCH,
+    // defaulting to allow until rust-lang/rust#62614 is fixed.
+    Allow,
+    "pattern with const indirectly referencing non-`#[structural_match]` type"
+}
+
 /// Some lints that are buffered from `libsyntax`. See `syntax::early_buffered_lints`.
 pub mod parser {
-    declare_lint! {
-        pub QUESTION_MARK_MACRO_SEP,
-        Allow,
-        "detects the use of `?` as a macro separator"
-    }
-
     declare_lint! {
         pub ILL_FORMED_ATTRIBUTE_INPUT,
         Warn,
@@ -444,12 +447,12 @@ declare_lint_pass! {
         PROC_MACRO_DERIVE_RESOLUTION_FALLBACK,
         MACRO_USE_EXTERN_CRATE,
         MACRO_EXPANDED_MACRO_EXPORTS_ACCESSED_BY_ABSOLUTE_PATHS,
-        parser::QUESTION_MARK_MACRO_SEP,
         parser::ILL_FORMED_ATTRIBUTE_INPUT,
         DEPRECATED_IN_FUTURE,
         AMBIGUOUS_ASSOCIATED_ITEMS,
         NESTED_IMPL_TRAIT,
         MUTABLE_BORROW_RESERVATION_CONFLICT,
+        INDIRECT_STRUCTURAL_MATCH,
     ]
 }
 
@@ -468,6 +471,7 @@ pub enum BuiltinLintDiagnostics {
     UnusedImports(String, Vec<(Span, String)>),
     NestedImplTrait { outer_impl_trait_span: Span, inner_impl_trait_span: Span },
     RedundantImport(Vec<(Span, bool)>, ast::Ident),
+    DeprecatedMacro(Option<Symbol>, Span),
 }
 
 pub(crate) fn add_elided_lifetime_in_path_suggestion(
@@ -593,6 +597,8 @@ impl BuiltinLintDiagnostics {
                     );
                 }
             }
+            BuiltinLintDiagnostics::DeprecatedMacro(suggestion, span) =>
+                stability::deprecation_suggestion(db, suggestion, span),
         }
     }
 }

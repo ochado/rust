@@ -2,7 +2,6 @@ use crate::edition::Edition;
 use crate::ext::base::{DummyResult, ExtCtxt, MacResult, TTMacroExpander};
 use crate::ext::base::{SyntaxExtension, SyntaxExtensionKind};
 use crate::ext::expand::{AstFragment, AstFragmentKind};
-use crate::ext::hygiene::Transparency;
 use crate::ext::tt::macro_parser::{parse, parse_failure_msg};
 use crate::ext::tt::macro_parser::{Error, Failure, Success};
 use crate::ext::tt::macro_parser::{MatchedNonterminal, MatchedSeq};
@@ -15,7 +14,7 @@ use crate::parse::token::{self, NtTT, Token};
 use crate::parse::{Directory, ParseSess};
 use crate::symbol::{kw, sym, Symbol};
 use crate::tokenstream::{DelimSpan, TokenStream, TokenTree};
-use crate::{ast, attr};
+use crate::{ast, attr, attr::TransparencyError};
 
 use errors::FatalError;
 use log::debug;
@@ -89,6 +88,7 @@ impl<'a> ParserAnyMacro<'a> {
 
 struct MacroRulesMacroExpander {
     name: ast::Ident,
+    span: Span,
     lhses: Vec<quoted::TokenTree>,
     rhses: Vec<quoted::TokenTree>,
     valid: bool,
@@ -100,12 +100,11 @@ impl TTMacroExpander for MacroRulesMacroExpander {
         cx: &'cx mut ExtCtxt<'_>,
         sp: Span,
         input: TokenStream,
-        def_span: Option<Span>,
     ) -> Box<dyn MacResult + 'cx> {
         if !self.valid {
             return DummyResult::any(sp);
         }
-        generic_extension(cx, sp, def_span, self.name, input, &self.lhses, &self.rhses)
+        generic_extension(cx, sp, self.span, self.name, input, &self.lhses, &self.rhses)
     }
 }
 
@@ -118,7 +117,7 @@ fn trace_macros_note(cx: &mut ExtCtxt<'_>, sp: Span, message: String) {
 fn generic_extension<'cx>(
     cx: &'cx mut ExtCtxt<'_>,
     sp: Span,
-    def_span: Option<Span>,
+    def_span: Span,
     name: ast::Ident,
     arg: TokenStream,
     lhses: &[quoted::TokenTree],
@@ -200,10 +199,8 @@ fn generic_extension<'cx>(
     let span = token.span.substitute_dummy(sp);
     let mut err = cx.struct_span_err(span, &parse_failure_msg(&token));
     err.span_label(span, label);
-    if let Some(sp) = def_span {
-        if cx.source_map().span_to_filename(sp).is_real() && !sp.is_dummy() {
-            err.span_label(cx.source_map().def_span(sp), "when calling this macro");
-        }
+    if !def_span.is_dummy() && cx.source_map().span_to_filename(def_span).is_real() {
+        err.span_label(cx.source_map().def_span(def_span), "when calling this macro");
     }
 
     // Check whether there's a missing comma in this macro call, like `println!("{}" a);`
@@ -378,15 +375,21 @@ pub fn compile(
     }
 
     let expander: Box<_> =
-        Box::new(MacroRulesMacroExpander { name: def.ident, lhses, rhses, valid });
+        Box::new(MacroRulesMacroExpander { name: def.ident, span: def.span, lhses, rhses, valid });
 
-    let default_transparency = if attr::contains_name(&def.attrs, sym::rustc_transparent_macro) {
-        Transparency::Transparent
-    } else if body.legacy {
-        Transparency::SemiTransparent
-    } else {
-        Transparency::Opaque
-    };
+    let (default_transparency, transparency_error) =
+        attr::find_transparency(&def.attrs, body.legacy);
+    match transparency_error {
+        Some(TransparencyError::UnknownTransparency(value, span)) =>
+            sess.span_diagnostic.span_err(
+                span, &format!("unknown macro transparency: `{}`", value)
+            ),
+        Some(TransparencyError::MultipleTransparencyAttrs(old_span, new_span)) =>
+            sess.span_diagnostic.span_err(
+                vec![old_span, new_span], "multiple macro transparency attributes"
+            ),
+        None => {}
+    }
 
     let allow_internal_unstable =
         attr::find_by_name(&def.attrs, sym::allow_internal_unstable).map(|attr| {
@@ -417,8 +420,6 @@ pub fn compile(
                 })
         });
 
-    let allow_internal_unsafe = attr::contains_name(&def.attrs, sym::allow_internal_unsafe);
-
     let mut local_inner_macros = false;
     if let Some(macro_export) = attr::find_by_name(&def.attrs, sym::macro_export) {
         if let Some(l) = macro_export.meta_item_list() {
@@ -426,23 +427,15 @@ pub fn compile(
         }
     }
 
-    let unstable_feature =
-        attr::find_stability(&sess, &def.attrs, def.span).and_then(|stability| {
-            if let attr::StabilityLevel::Unstable { issue, .. } = stability.level {
-                Some((stability.feature, issue))
-            } else {
-                None
-            }
-        });
-
     SyntaxExtension {
         kind: SyntaxExtensionKind::LegacyBang(expander),
-        def_info: Some((def.id, def.span)),
+        span: def.span,
         default_transparency,
         allow_internal_unstable,
-        allow_internal_unsafe,
+        allow_internal_unsafe: attr::contains_name(&def.attrs, sym::allow_internal_unsafe),
         local_inner_macros,
-        unstable_feature,
+        stability: attr::find_stability(&sess, &def.attrs, def.span),
+        deprecation: attr::find_deprecation(&sess, &def.attrs, def.span),
         helper_attrs: Vec::new(),
         edition,
     }

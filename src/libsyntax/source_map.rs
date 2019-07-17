@@ -7,10 +7,8 @@
 //! within the SourceMap, which upon request can be converted to line and column
 //! information, source code snippets, etc.
 
-
 pub use syntax_pos::*;
-pub use syntax_pos::hygiene::{ExpnFormat, ExpnInfo};
-pub use ExpnFormat::*;
+pub use syntax_pos::hygiene::{ExpnKind, ExpnInfo};
 
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stable_hasher::StableHasher;
@@ -150,7 +148,7 @@ impl SourceMap {
                             -> SourceMap {
         SourceMap {
             files: Default::default(),
-            file_loader: file_loader,
+            file_loader,
             path_mapping,
         }
     }
@@ -396,7 +394,7 @@ impl SourceMap {
         let f = (*self.files.borrow().source_files)[idx].clone();
 
         match f.lookup_line(pos) {
-            Some(line) => Ok(SourceFileAndLine { sf: f, line: line }),
+            Some(line) => Ok(SourceFileAndLine { sf: f, line }),
             None => Err(f)
         }
     }
@@ -511,7 +509,7 @@ impl SourceMap {
                               start_col,
                               end_col: hi.col });
 
-        Ok(FileLines {file: lo.file, lines: lines})
+        Ok(FileLines {file: lo.file, lines})
     }
 
     /// Extracts the source surrounding the given `Span` using the `extract_source` function. The
@@ -820,7 +818,7 @@ impl SourceMap {
         let idx = self.lookup_source_file_idx(bpos);
         let sf = (*self.files.borrow().source_files)[idx].clone();
         let offset = bpos - sf.start_pos;
-        SourceFileAndBytePos {sf: sf, pos: offset}
+        SourceFileAndBytePos {sf, pos: offset}
     }
 
     /// Converts an absolute BytePos to a CharPos relative to the source_file.

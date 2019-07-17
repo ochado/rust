@@ -1,5 +1,5 @@
 use crate::borrow_check::location::LocationTable;
-use crate::borrow_check::nll::constraints::ConstraintSet;
+use crate::borrow_check::nll::constraints::OutlivesConstraintSet;
 use crate::borrow_check::nll::facts::{AllFacts, AllFactsExt};
 use crate::borrow_check::nll::region_infer::values::RegionValueElements;
 use crate::borrow_check::nll::universal_regions::UniversalRegions;
@@ -7,7 +7,7 @@ use crate::borrow_check::nll::ToRegionVid;
 use crate::dataflow::move_paths::MoveData;
 use crate::dataflow::FlowAtLocation;
 use crate::dataflow::MaybeInitializedPlaces;
-use rustc::mir::{Local, Body};
+use rustc::mir::{Body, Local};
 use rustc::ty::{RegionVid, TyCtxt};
 use rustc_data_structures::fx::FxHashSet;
 use std::rc::Rc;
@@ -15,6 +15,7 @@ use std::rc::Rc;
 use super::TypeChecker;
 
 mod local_use_map;
+mod polonius;
 mod trace;
 
 /// Combines liveness analysis with initialization analysis to
@@ -57,15 +58,9 @@ pub(super) fn generate<'tcx>(
     };
 
     if !live_locals.is_empty() {
-        trace::trace(
-            typeck,
-            body,
-            elements,
-            flow_inits,
-            move_data,
-            live_locals,
-            location_table,
-        );
+        trace::trace(typeck, body, elements, flow_inits, move_data, live_locals, location_table);
+
+        polonius::populate_var_liveness_facts(typeck, body, location_table);
     }
 }
 
@@ -107,7 +102,7 @@ fn compute_live_locals(
 fn regions_that_outlive_free_regions(
     num_region_vars: usize,
     universal_regions: &UniversalRegions<'tcx>,
-    constraint_set: &ConstraintSet,
+    constraint_set: &OutlivesConstraintSet,
 ) -> FxHashSet<RegionVid> {
     // Build a graph of the outlives constraints thus far. This is
     // a reverse graph, so for each constraint `R1: R2` we have an

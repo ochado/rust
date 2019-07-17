@@ -352,7 +352,7 @@ impl Options {
         let mut cfgs = matches.opt_strs("cfg");
         cfgs.push("rustdoc".to_string());
         if should_test {
-            cfgs.push("test".to_string());
+            cfgs.push("doctest".to_string());
         }
 
         let extension_css = matches.opt_str("e").map(|s| PathBuf::from(&s));

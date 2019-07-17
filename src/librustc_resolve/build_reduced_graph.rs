@@ -9,7 +9,7 @@ use crate::resolve_imports::ImportDirectiveSubclass::{self, GlobImport, SingleIm
 use crate::{Module, ModuleData, ModuleKind, NameBinding, NameBindingKind, Segment, ToNameBinding};
 use crate::{ModuleOrUniformRoot, PerNS, Resolver, ResolverArenas, ExternPreludeEntry};
 use crate::Namespace::{self, TypeNS, ValueNS, MacroNS};
-use crate::{resolve_error, resolve_struct_error, ResolutionError};
+use crate::{resolve_error, resolve_struct_error, ResolutionError, Determinacy};
 
 use rustc::bug;
 use rustc::hir::def::{self, *};
@@ -29,8 +29,7 @@ use syntax::attr;
 
 use syntax::ast::{self, Block, ForeignItem, ForeignItemKind, Item, ItemKind, NodeId};
 use syntax::ast::{MetaItemKind, StmtKind, TraitItem, TraitItemKind, Variant};
-use syntax::ext::base::{MacroKind, SyntaxExtension};
-use syntax::ext::base::Determinacy::Undetermined;
+use syntax::ext::base::SyntaxExtension;
 use syntax::ext::hygiene::Mark;
 use syntax::ext::tt::macro_rules;
 use syntax::feature_gate::is_builtin_attr;
@@ -231,9 +230,9 @@ impl<'a> Resolver<'a> {
                     source: source.ident,
                     target: ident,
                     source_bindings: PerNS {
-                        type_ns: Cell::new(Err(Undetermined)),
-                        value_ns: Cell::new(Err(Undetermined)),
-                        macro_ns: Cell::new(Err(Undetermined)),
+                        type_ns: Cell::new(Err(Determinacy::Undetermined)),
+                        value_ns: Cell::new(Err(Determinacy::Undetermined)),
+                        macro_ns: Cell::new(Err(Determinacy::Undetermined)),
                     },
                     target_bindings: PerNS {
                         type_ns: Cell::new(None),
@@ -456,23 +455,7 @@ impl<'a> Resolver<'a> {
 
                 // Functions introducing procedural macros reserve a slot
                 // in the macro namespace as well (see #52225).
-                if attr::contains_name(&item.attrs, sym::proc_macro) ||
-                   attr::contains_name(&item.attrs, sym::proc_macro_attribute) {
-                    let res = Res::Def(DefKind::Macro(MacroKind::ProcMacroStub), res.def_id());
-                    self.define(parent, ident, MacroNS, (res, vis, sp, expansion));
-                }
-                if let Some(attr) = attr::find_by_name(&item.attrs, sym::proc_macro_derive) {
-                    if let Some(trait_attr) =
-                            attr.meta_item_list().and_then(|list| list.get(0).cloned()) {
-                        if let Some(ident) = trait_attr.ident() {
-                            let res = Res::Def(
-                                DefKind::Macro(MacroKind::ProcMacroStub),
-                                res.def_id(),
-                            );
-                            self.define(parent, ident, MacroNS, (res, vis, ident.span, expansion));
-                        }
-                    }
-                }
+                self.define_macro(item, expansion, &mut LegacyScope::Empty);
             }
 
             // These items live in the type namespace.
@@ -758,7 +741,10 @@ impl<'a> Resolver<'a> {
     }
 
     pub fn macro_def_scope(&mut self, expansion: Mark) -> Module<'a> {
-        let def_id = self.macro_defs[&expansion];
+        let def_id = match self.macro_defs.get(&expansion) {
+            Some(def_id) => *def_id,
+            None => return self.graph_root,
+        };
         if let Some(id) = self.definitions.as_local_node_id(def_id) {
             self.local_macro_def_scopes[&id]
         } else if def_id.krate == CrateNum::BuiltinMacros {
@@ -769,20 +755,20 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub fn get_macro(&mut self, res: Res) -> Lrc<SyntaxExtension> {
+    pub fn get_macro(&mut self, res: Res) -> Option<Lrc<SyntaxExtension>> {
         let def_id = match res {
             Res::Def(DefKind::Macro(..), def_id) => def_id,
             Res::NonMacroAttr(attr_kind) =>
-                return self.non_macro_attr(attr_kind == NonMacroAttrKind::Tool),
-            _ => panic!("expected `DefKind::Macro` or `Res::NonMacroAttr`"),
+                return Some(self.non_macro_attr(attr_kind == NonMacroAttrKind::Tool)),
+            _ => return None,
         };
         if let Some(ext) = self.macro_map.get(&def_id) {
-            return ext.clone();
+            return Some(ext.clone());
         }
 
         let macro_def = match self.cstore.load_macro_untracked(def_id, &self.session) {
             LoadedMacro::MacroDef(macro_def) => macro_def,
-            LoadedMacro::ProcMacro(ext) => return ext,
+            LoadedMacro::ProcMacro(ext) => return Some(ext),
         };
 
         let ext = Lrc::new(macro_rules::compile(&self.session.parse_sess,
@@ -790,7 +776,7 @@ impl<'a> Resolver<'a> {
                                                &macro_def,
                                                self.cstore.crate_edition_untracked(def_id.krate)));
         self.macro_map.insert(def_id, ext.clone());
-        ext
+        Some(ext)
     }
 
     /// Ensures that the reduced graph rooted at the given external module
@@ -937,12 +923,19 @@ pub struct BuildReducedGraphVisitor<'a, 'b> {
 
 impl<'a, 'b> BuildReducedGraphVisitor<'a, 'b> {
     fn visit_invoc(&mut self, id: ast::NodeId) -> &'b InvocationData<'b> {
-        let mark = id.placeholder_to_mark();
-        self.resolver.current_module.unresolved_invocations.borrow_mut().insert(mark);
-        let invocation = self.resolver.invocations[&mark];
-        invocation.module.set(self.resolver.current_module);
-        invocation.parent_legacy_scope.set(self.current_legacy_scope);
-        invocation
+        let invoc_id = id.placeholder_to_mark();
+
+        self.resolver.current_module.unresolved_invocations.borrow_mut().insert(invoc_id);
+
+        let invocation_data = self.resolver.arenas.alloc_invocation_data(InvocationData {
+            module: self.resolver.current_module,
+            parent_legacy_scope: self.current_legacy_scope,
+            output_legacy_scope: Cell::new(None),
+        });
+        let old_invocation_data = self.resolver.invocations.insert(invoc_id, invocation_data);
+        assert!(old_invocation_data.is_none(), "invocation data is reset for an invocation");
+
+        invocation_data
     }
 }
 
