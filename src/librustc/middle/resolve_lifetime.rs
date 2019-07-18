@@ -8,7 +8,8 @@
 use crate::hir::def::{Res, DefKind};
 use crate::hir::def_id::{CrateNum, DefId, LocalDefId, LOCAL_CRATE};
 use crate::hir::map::Map;
-use crate::hir::{GenericArg, GenericParam, ItemLocalId, LifetimeName, Node, ParamName};
+use crate::hir::ptr::P;
+use crate::hir::{GenericArg, GenericParam, ItemLocalId, LifetimeName, Node, ParamName, QPath};
 use crate::ty::{self, DefIdTree, GenericParamDefKind, TyCtxt};
 
 use crate::rustc::lint;
@@ -18,10 +19,9 @@ use errors::{Applicability, DiagnosticBuilder};
 use rustc_macros::HashStable;
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::mem::replace;
+use std::mem::{replace, take};
 use syntax::ast;
 use syntax::attr;
-use syntax::ptr::P;
 use syntax::symbol::{kw, sym};
 use syntax_pos::Span;
 
@@ -83,7 +83,7 @@ impl Region {
     fn early(hir_map: &Map<'_>, index: &mut u32, param: &GenericParam) -> (ParamName, Region) {
         let i = *index;
         *index += 1;
-        let def_id = hir_map.local_def_id_from_hir_id(param.hir_id);
+        let def_id = hir_map.local_def_id(param.hir_id);
         let origin = LifetimeDefOrigin::from_param(param);
         debug!("Region::early: index={} def_id={:?}", i, def_id);
         (param.name.modern(), Region::EarlyBound(i, def_id, origin))
@@ -91,7 +91,7 @@ impl Region {
 
     fn late(hir_map: &Map<'_>, param: &GenericParam) -> (ParamName, Region) {
         let depth = ty::INNERMOST;
-        let def_id = hir_map.local_def_id_from_hir_id(param.hir_id);
+        let def_id = hir_map.local_def_id(param.hir_id);
         let origin = LifetimeDefOrigin::from_param(param);
         debug!(
             "Region::late: param={:?} depth={:?} def_id={:?} origin={:?}",
@@ -368,7 +368,7 @@ pub fn provide(providers: &mut ty::query::Providers<'_>) {
 /// entire crate. You should not read the result of this query
 /// directly, but rather use `named_region_map`, `is_late_bound_map`,
 /// etc.
-fn resolve_lifetimes<'tcx>(tcx: TyCtxt<'tcx>, for_krate: CrateNum) -> &'tcx ResolveLifetimes {
+fn resolve_lifetimes(tcx: TyCtxt<'_>, for_krate: CrateNum) -> &ResolveLifetimes {
     assert_eq!(for_krate, LOCAL_CRATE);
 
     let named_region_map = krate(tcx);
@@ -395,7 +395,7 @@ fn resolve_lifetimes<'tcx>(tcx: TyCtxt<'tcx>, for_krate: CrateNum) -> &'tcx Reso
     tcx.arena.alloc(rl)
 }
 
-fn krate<'tcx>(tcx: TyCtxt<'tcx>) -> NamedRegionMap {
+fn krate(tcx: TyCtxt<'_>) -> NamedRegionMap {
     let krate = tcx.hir().krate();
     let mut map = NamedRegionMap {
         defs: Default::default(),
@@ -441,7 +441,7 @@ impl<'a, 'tcx> Visitor<'tcx> for LifetimeContext<'a, 'tcx> {
 
     fn visit_nested_body(&mut self, body: hir::BodyId) {
         // Each body has their own set of labels, save labels.
-        let saved = replace(&mut self.labels_in_fn, vec![]);
+        let saved = take(&mut self.labels_in_fn);
         let body = self.tcx.hir().body(body);
         extract_labels(self, body);
         self.with(
@@ -1201,11 +1201,10 @@ fn extract_labels(ctxt: &mut LifetimeContext<'_, '_>, body: &hir::Body) {
     }
 
     fn expression_label(ex: &hir::Expr) -> Option<ast::Ident> {
-        match ex.node {
-            hir::ExprKind::While(.., Some(label)) | hir::ExprKind::Loop(_, Some(label), _) => {
-                Some(label.ident)
-            }
-            _ => None,
+        if let hir::ExprKind::Loop(_, Some(label), _) = ex.node {
+            Some(label.ident)
+        } else {
+            None
         }
     }
 
@@ -1326,7 +1325,7 @@ fn object_lifetime_defaults_for_item(
 
                 add_bounds(&mut set, &param.bounds);
 
-                let param_def_id = tcx.hir().local_def_id_from_hir_id(param.hir_id);
+                let param_def_id = tcx.hir().local_def_id(param.hir_id);
                 for predicate in &generics.where_clause.predicates {
                     // Look for `type: ...` where clauses.
                     let data = match *predicate {
@@ -1370,7 +1369,7 @@ fn object_lifetime_defaults_for_item(
                                 .enumerate()
                                 .find(|&(_, (_, lt_name, _))| lt_name == name)
                                 .map_or(Set1::Many, |(i, (id, _, origin))| {
-                                    let def_id = tcx.hir().local_def_id_from_hir_id(id);
+                                    let def_id = tcx.hir().local_def_id(id);
                                     Set1::One(Region::EarlyBound(i as u32, def_id, origin))
                                 })
                         }
@@ -1405,9 +1404,8 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
             lifetime_uses,
             ..
         } = self;
-        let labels_in_fn = replace(&mut self.labels_in_fn, vec![]);
-        let xcrate_object_lifetime_defaults =
-            replace(&mut self.xcrate_object_lifetime_defaults, DefIdMap::default());
+        let labels_in_fn = take(&mut self.labels_in_fn);
+        let xcrate_object_lifetime_defaults = take(&mut self.xcrate_object_lifetime_defaults);
         let mut this = LifetimeContext {
             tcx: *tcx,
             map: map,
@@ -1460,10 +1458,10 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
     }
 
     // helper method to issue suggestions from `fn rah<'a>(&'a T)` to `fn rah(&T)`
+    // or from `fn rah<'a>(T<'a>)` to `fn rah(T<'_>)`
     fn suggest_eliding_single_use_lifetime(
         &self, err: &mut DiagnosticBuilder<'_>, def_id: DefId, lifetime: &hir::Lifetime
     ) {
-        // FIXME: future work: also suggest `impl Foo<'_>` for `impl<'a> Foo<'a>`
         let name = lifetime.name.ident();
         let mut remove_decl = None;
         if let Some(parent_def_id) = self.tcx.parent(def_id) {
@@ -1473,18 +1471,38 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
         }
 
         let mut remove_use = None;
+        let mut elide_use = None;
         let mut find_arg_use_span = |inputs: &hir::HirVec<hir::Ty>| {
             for input in inputs {
-                if let hir::TyKind::Rptr(lt, _) = input.node {
-                    if lt.name.ident() == name {
-                        // include the trailing whitespace between the ampersand and the type name
-                        let lt_through_ty_span = lifetime.span.to(input.span.shrink_to_hi());
-                        remove_use = Some(
-                            self.tcx.sess.source_map()
-                                .span_until_non_whitespace(lt_through_ty_span)
-                        );
-                        break;
+                match input.node {
+                    hir::TyKind::Rptr(lt, _) => {
+                        if lt.name.ident() == name {
+                            // include the trailing whitespace between the lifetime and type names
+                            let lt_through_ty_span = lifetime.span.to(input.span.shrink_to_hi());
+                            remove_use = Some(
+                                self.tcx.sess.source_map()
+                                    .span_until_non_whitespace(lt_through_ty_span)
+                            );
+                            break;
+                        }
                     }
+                    hir::TyKind::Path(ref qpath) => {
+                        if let QPath::Resolved(_, path) = qpath {
+
+                            let last_segment = &path.segments[path.segments.len()-1];
+                            let generics = last_segment.generic_args();
+                            for arg in generics.args.iter() {
+                                if let GenericArg::Lifetime(lt) = arg {
+                                    if lt.name.ident() == name {
+                                        elide_use = Some(lt.span);
+                                        break;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    },
+                    _ => {}
                 }
             }
         };
@@ -1508,24 +1526,35 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
             }
         }
 
-        if let (Some(decl_span), Some(use_span)) = (remove_decl, remove_use) {
-            // if both declaration and use deletion spans start at the same
-            // place ("start at" because the latter includes trailing
-            // whitespace), then this is an in-band lifetime
-            if decl_span.shrink_to_lo() == use_span.shrink_to_lo() {
-                err.span_suggestion(
-                    use_span,
-                    "elide the single-use lifetime",
-                    String::new(),
-                    Applicability::MachineApplicable,
-                );
-            } else {
+        let msg = "elide the single-use lifetime";
+        match (remove_decl, remove_use, elide_use) {
+            (Some(decl_span), Some(use_span), None) => {
+                // if both declaration and use deletion spans start at the same
+                // place ("start at" because the latter includes trailing
+                // whitespace), then this is an in-band lifetime
+                if decl_span.shrink_to_lo() == use_span.shrink_to_lo() {
+                    err.span_suggestion(
+                        use_span,
+                        msg,
+                        String::new(),
+                        Applicability::MachineApplicable,
+                    );
+                } else {
+                    err.multipart_suggestion(
+                        msg,
+                        vec![(decl_span, String::new()), (use_span, String::new())],
+                        Applicability::MachineApplicable,
+                    );
+                }
+            }
+            (Some(decl_span), None, Some(use_span)) => {
                 err.multipart_suggestion(
-                    "elide the single-use lifetime",
-                    vec![(decl_span, String::new()), (use_span, String::new())],
+                    msg,
+                    vec![(decl_span, String::new()), (use_span, "'_".to_owned())],
                     Applicability::MachineApplicable,
                 );
             }
+            _ => {}
         }
     }
 
@@ -1836,7 +1865,7 @@ impl<'a, 'tcx> LifetimeContext<'a, 'tcx> {
                         node: hir::ImplItemKind::Method(..),
                         ..
                     }) => {
-                        let scope = self.tcx.hir().local_def_id_from_hir_id(fn_id);
+                        let scope = self.tcx.hir().local_def_id(fn_id);
                         def = Region::Free(scope, def.id().unwrap());
                     }
                     _ => {}

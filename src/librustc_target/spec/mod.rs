@@ -66,6 +66,7 @@ mod fuchsia_base;
 mod redox_base;
 mod riscv_base;
 mod wasm32_base;
+mod vxworks_base;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash,
          RustcEncodable, RustcDecodable)]
@@ -361,7 +362,6 @@ supported_targets! {
     ("thumbv7neon-unknown-linux-gnueabihf", thumbv7neon_unknown_linux_gnueabihf),
     ("armv7-unknown-linux-musleabihf", armv7_unknown_linux_musleabihf),
     ("aarch64-unknown-linux-gnu", aarch64_unknown_linux_gnu),
-
     ("aarch64-unknown-linux-musl", aarch64_unknown_linux_musl),
     ("x86_64-unknown-linux-musl", x86_64_unknown_linux_musl),
     ("i686-unknown-linux-musl", i686_unknown_linux_musl),
@@ -476,6 +476,15 @@ supported_targets! {
     ("x86_64-unknown-uefi", x86_64_unknown_uefi),
 
     ("nvptx64-nvidia-cuda", nvptx64_nvidia_cuda),
+
+    ("x86_64-wrs-vxworks", x86_64_wrs_vxworks),
+    ("i686-wrs-vxworks", i686_wrs_vxworks),
+    ("i586-wrs-vxworks", i586_wrs_vxworks),
+    ("armv7-wrs-vxworks", armv7_wrs_vxworks),
+    ("aarch64-wrs-vxworks", aarch64_wrs_vxworks),
+    ("powerpc-wrs-vxworks", powerpc_wrs_vxworks),
+    ("powerpc-wrs-vxworks-spe", powerpc_wrs_vxworks_spe),
+    ("powerpc64-wrs-vxworks", powerpc64_wrs_vxworks),
 }
 
 /// Everything `rustc` knows about how to compile for a specific target.
@@ -497,8 +506,8 @@ pub struct Target {
     pub target_env: String,
     /// Vendor name to use for conditional compilation.
     pub target_vendor: String,
-    /// Architecture to use for ABI considerations. Valid options: "x86",
-    /// "x86_64", "arm", "aarch64", "mips", "powerpc", and "powerpc64".
+    /// Architecture to use for ABI considerations. Valid options include: "x86",
+    /// "x86_64", "arm", "aarch64", "mips", "powerpc", "powerpc64", and others.
     pub arch: String,
     /// [Data layout](http://llvm.org/docs/LangRef.html#data-layout) to pass to LLVM.
     pub data_layout: String,

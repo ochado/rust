@@ -1,7 +1,7 @@
 use rustc::ty::{self, Ty, TypeAndMut};
 use rustc::ty::layout::{self, TyLayout, Size};
 use rustc::ty::adjustment::{PointerCast};
-use syntax::ast::{FloatTy, IntTy, UintTy};
+use syntax::ast::FloatTy;
 use syntax::symbol::sym;
 
 use rustc_apfloat::ieee::{Single, Double};
@@ -11,9 +11,9 @@ use rustc::mir::interpret::{
 };
 use rustc::mir::CastKind;
 
-use super::{InterpretCx, Machine, PlaceTy, OpTy, Immediate};
+use super::{InterpCx, Machine, PlaceTy, OpTy, Immediate, FnVal};
 
-impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
+impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     fn type_is_fat_ptr(&self, ty: Ty<'tcx>) -> bool {
         match ty.sty {
             ty::RawPtr(ty::TypeAndMut { ty, .. }) |
@@ -86,7 +86,7 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
                             def_id,
                             substs,
                         ).ok_or_else(|| InterpError::TooGeneric.into());
-                        let fn_ptr = self.memory.create_fn_alloc(instance?);
+                        let fn_ptr = self.memory.create_fn_alloc(FnVal::Instance(instance?));
                         self.write_scalar(Scalar::Ptr(fn_ptr.into()), dest)?;
                     }
                     _ => bug!("reify fn pointer on {:?}", src.layout.ty),
@@ -115,7 +115,7 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
                             substs,
                             ty::ClosureKind::FnOnce,
                         );
-                        let fn_ptr = self.memory.create_fn_alloc(instance);
+                        let fn_ptr = self.memory.create_fn_alloc(FnVal::Instance(instance));
                         let val = Immediate::Scalar(Scalar::Ptr(fn_ptr.into()).into());
                         self.write_immediate(val, dest)?;
                     }
@@ -151,7 +151,7 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
                     "Unexpected cast from type {:?}", src_layout.ty
                 );
                 match val.to_bits_or_ptr(src_layout.size, self) {
-                    Err(ptr) => self.cast_from_ptr(ptr, dest_layout.ty),
+                    Err(ptr) => self.cast_from_ptr(ptr, src_layout, dest_layout),
                     Ok(data) => self.cast_from_int(data, src_layout, dest_layout),
                 }
             }
@@ -239,17 +239,25 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
     fn cast_from_ptr(
         &self,
         ptr: Pointer<M::PointerTag>,
-        ty: Ty<'tcx>
+        src_layout: TyLayout<'tcx>,
+        dest_layout: TyLayout<'tcx>,
     ) -> InterpResult<'tcx, Scalar<M::PointerTag>> {
         use rustc::ty::TyKind::*;
-        match ty.sty {
+
+        match dest_layout.ty.sty {
             // Casting to a reference or fn pointer is not permitted by rustc,
             // no need to support it here.
-            RawPtr(_) |
-            Int(IntTy::Isize) |
-            Uint(UintTy::Usize) => Ok(ptr.into()),
-            Int(_) | Uint(_) => err!(ReadPointerAsBytes),
-            _ => err!(Unimplemented(format!("ptr to {:?} cast", ty))),
+            RawPtr(_) => Ok(ptr.into()),
+            Int(_) | Uint(_) => {
+                let size = self.memory.pointer_size();
+
+                match self.force_bits(Scalar::Ptr(ptr), size) {
+                    Ok(bits) => self.cast_from_int(bits, src_layout, dest_layout),
+                    Err(_) if dest_layout.size == size => Ok(ptr.into()),
+                    Err(e) => Err(e),
+                }
+            }
+            _ => bug!("invalid MIR: ptr to {:?} cast", dest_layout.ty)
         }
     }
 
@@ -262,7 +270,8 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
         dty: Ty<'tcx>,
     ) -> InterpResult<'tcx> {
         // A<Struct> -> A<Trait> conversion
-        let (src_pointee_ty, dest_pointee_ty) = self.tcx.struct_lockstep_tails(sty, dty);
+        let (src_pointee_ty, dest_pointee_ty) =
+            self.tcx.struct_lockstep_tails_erasing_lifetimes(sty, dty, self.param_env);
 
         match (&src_pointee_ty.sty, &dest_pointee_ty.sty) {
             (&ty::Array(_, length), &ty::Slice(_)) => {

@@ -7,14 +7,12 @@ edition = "2018"
 [lib]
 name = "rustc_codegen_ssa"
 path = "lib.rs"
-crate-type = ["dylib"]
 test = false
 
 [dependencies]
 bitflags = "1.0.4"
 cc = "1.0.1"
 num_cpus = "1.0"
-rustc-demangle = "0.1.15"
 memmap = "0.6"
 log = "0.4.5"
 libc = "0.2.44"

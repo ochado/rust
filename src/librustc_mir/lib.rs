@@ -15,20 +15,18 @@ Rust MIR: a lowered representation of Rust. Also: an experiment!
 #![feature(decl_macro)]
 #![feature(exhaustive_patterns)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(rustc_attrs)]
 #![feature(never_type)]
 #![feature(specialization)]
 #![feature(try_trait)]
 #![feature(unicode_internals)]
-#![feature(step_trait)]
 #![feature(slice_concat_ext)]
 #![feature(trusted_len)]
 #![feature(try_blocks)]
+#![feature(mem_take)]
 
 #![recursion_limit="256"]
 
 #![deny(rust_2018_idioms)]
-#![deny(internal)]
 #![deny(unused_lifetimes)]
 
 #[macro_use] extern crate log;

@@ -331,6 +331,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             err.note("try using `<*const T>::as_ref()` to get a reference to the \
                                       type behind the pointer: https://doc.rust-lang.org/std/\
                                       primitive.pointer.html#method.as_ref");
+                            err.note("using `<*const T>::as_ref()` on a pointer \
+                                      which is unaligned or points to invalid \
+                                      or uninitialized memory is undefined behavior");
                         }
                         err
                     }
@@ -775,12 +778,12 @@ impl Ord for TraitInfo {
 }
 
 /// Retrieves all traits in this crate and any dependent crates.
-pub fn all_traits<'tcx>(tcx: TyCtxt<'tcx>) -> Vec<TraitInfo> {
+pub fn all_traits(tcx: TyCtxt<'_>) -> Vec<TraitInfo> {
     tcx.all_traits(LOCAL_CRATE).iter().map(|&def_id| TraitInfo { def_id }).collect()
 }
 
 /// Computes all traits in this crate and any dependent crates.
-fn compute_all_traits<'tcx>(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
+fn compute_all_traits(tcx: TyCtxt<'_>) -> Vec<DefId> {
     use hir::itemlikevisit;
 
     let mut traits = vec![];
@@ -797,7 +800,7 @@ fn compute_all_traits<'tcx>(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
             match i.node {
                 hir::ItemKind::Trait(..) |
                 hir::ItemKind::TraitAlias(..) => {
-                    let def_id = self.map.local_def_id_from_hir_id(i.hir_id);
+                    let def_id = self.map.local_def_id(i.hir_id);
                     self.traits.push(def_id);
                 }
                 _ => ()

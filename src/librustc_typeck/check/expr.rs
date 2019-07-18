@@ -20,13 +20,13 @@ use crate::astconv::AstConv as _;
 
 use errors::{Applicability, DiagnosticBuilder};
 use syntax::ast;
-use syntax::ptr::P;
 use syntax::symbol::{Symbol, LocalInternedString, kw, sym};
 use syntax::source_map::Span;
 use syntax::util::lev_distance::find_best_match_for_name;
 use rustc::hir;
 use rustc::hir::{ExprKind, QPath};
 use rustc::hir::def::{CtorKind, Res, DefKind};
+use rustc::hir::ptr::P;
 use rustc::infer;
 use rustc::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc::mir::interpret::GlobalId;
@@ -159,11 +159,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Warn for non-block expressions with diverging children.
         match expr.node {
-            ExprKind::Block(..) |
-            ExprKind::Loop(..) | ExprKind::While(..) |
-            ExprKind::Match(..) => {}
-
-            _ => self.warn_if_unreachable(expr.hir_id, expr.span, "expression")
+            ExprKind::Block(..) | ExprKind::Loop(..) | ExprKind::Match(..) => {},
+            _ => self.warn_if_unreachable(expr.hir_id, expr.span, "expression"),
         }
 
         // Any expression that produces a value of type `!` must have diverged
@@ -245,9 +242,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ExprKind::Assign(ref lhs, ref rhs) => {
                 self.check_expr_assign(expr, expected, lhs, rhs)
             }
-            ExprKind::While(ref cond, ref body, _) => {
-                self.check_expr_while(cond, body, expr)
-            }
             ExprKind::Loop(ref body, _, source) => {
                 self.check_expr_loop(body, source, expected, expr)
             }
@@ -295,8 +289,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ExprKind::Index(ref base, ref idx) => {
                 self.check_expr_index(base, idx, needs, expr)
             }
-            ExprKind::Yield(ref value, _) => {
-                self.check_expr_yield(value, expr)
+            ExprKind::Yield(ref value, ref src) => {
+                self.check_expr_yield(value, expr, src)
             }
             hir::ExprKind::Err => {
                 tcx.types.err
@@ -702,36 +696,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    fn check_expr_while(
-        &self,
-        cond: &'tcx hir::Expr,
-        body: &'tcx hir::Block,
-        expr: &'tcx hir::Expr
-    ) -> Ty<'tcx> {
-        let ctxt = BreakableCtxt {
-            // Cannot use break with a value from a while loop.
-            coerce: None,
-            may_break: false, // Will get updated if/when we find a `break`.
-        };
-
-        let (ctxt, ()) = self.with_breakable_ctxt(expr.hir_id, ctxt, || {
-            self.check_expr_has_type_or_error(&cond, self.tcx.types.bool);
-            let cond_diverging = self.diverges.get();
-            self.check_block_no_value(&body);
-
-            // We may never reach the body so it diverging means nothing.
-            self.diverges.set(cond_diverging);
-        });
-
-        if ctxt.may_break {
-            // No way to know whether it's diverging because
-            // of a `break` or an outer `break` or `return`.
-            self.diverges.set(Diverges::Maybe);
-        }
-
-        self.tcx.mk_unit()
-    }
-
     fn check_expr_loop(
         &self,
         body: &'tcx hir::Block,
@@ -746,6 +710,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 Some(CoerceMany::new(coerce_to))
             }
 
+            hir::LoopSource::While |
             hir::LoopSource::WhileLet |
             hir::LoopSource::ForLoop => {
                 None
@@ -901,7 +866,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         expr: &'tcx hir::Expr,
     ) -> Ty<'tcx> {
         let tcx = self.tcx;
-        let count_def_id = tcx.hir().local_def_id_from_hir_id(count.hir_id);
+        let count_def_id = tcx.hir().local_def_id(count.hir_id);
         let count = if self.const_param_def_id(count).is_some() {
             Ok(self.to_const(count, tcx.type_of(count_def_id)))
         } else {
@@ -1541,12 +1506,24 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    fn check_expr_yield(&self, value: &'tcx hir::Expr, expr: &'tcx hir::Expr) -> Ty<'tcx> {
+    fn check_expr_yield(
+        &self,
+        value: &'tcx hir::Expr,
+        expr: &'tcx hir::Expr,
+        src: &'tcx hir::YieldSource
+    ) -> Ty<'tcx> {
         match self.yield_ty {
             Some(ty) => {
                 self.check_expr_coercable_to_type(&value, ty);
             }
-            None => {
+            // Given that this `yield` expression was generated as a result of lowering a `.await`,
+            // we know that the yield type must be `()`; however, the context won't contain this
+            // information. Hence, we check the source of the yield expression here and check its
+            // value's type against `()` (this check should always hold).
+            None if src == &hir::YieldSource::Await => {
+                self.check_expr_coercable_to_type(&value, self.tcx.mk_unit());
+            }
+            _ => {
                 struct_span_err!(self.tcx.sess, expr.span, E0627,
                                     "yield statement outside of generator literal").emit();
             }

@@ -480,11 +480,11 @@ impl<'a, 'tcx> hir::intravisit::Visitor<'tcx> for UnusedUnsafeVisitor<'a> {
     }
 }
 
-fn check_unused_unsafe<'a, 'tcx>(
-    tcx: TyCtxt<'tcx>,
+fn check_unused_unsafe(
+    tcx: TyCtxt<'_>,
     def_id: DefId,
     used_unsafe: &FxHashSet<hir::HirId>,
-    unsafe_blocks: &'a mut Vec<(hir::HirId, bool)>,
+    unsafe_blocks: &mut Vec<(hir::HirId, bool)>,
 ) {
     let body_id =
         tcx.hir().as_local_hir_id(def_id).and_then(|hir_id| {
@@ -506,7 +506,7 @@ fn check_unused_unsafe<'a, 'tcx>(
     hir::intravisit::Visitor::visit_body(&mut visitor, body);
 }
 
-fn unsafety_check_result<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> UnsafetyCheckResult {
+fn unsafety_check_result(tcx: TyCtxt<'_>, def_id: DefId) -> UnsafetyCheckResult {
     debug!("unsafety_violations({:?})", def_id);
 
     // N.B., this borrow is valid because all the consumers of
@@ -545,17 +545,17 @@ fn unsafety_check_result<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> UnsafetyChec
     }
 }
 
-fn unsafe_derive_on_repr_packed<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) {
+fn unsafe_derive_on_repr_packed(tcx: TyCtxt<'_>, def_id: DefId) {
     let lint_hir_id = tcx.hir().as_local_hir_id(def_id).unwrap_or_else(||
         bug!("checking unsafety for non-local def id {:?}", def_id));
 
     // FIXME: when we make this a hard error, this should have its
     // own error code.
     let message = if tcx.generics_of(def_id).own_requires_monomorphization() {
-        "#[derive] can't be used on a #[repr(packed)] struct with \
+        "`#[derive]` can't be used on a `#[repr(packed)]` struct with \
          type or const parameters (error E0133)".to_string()
     } else {
-        "#[derive] can't be used on a #[repr(packed)] struct that \
+        "`#[derive]` can't be used on a `#[repr(packed)]` struct that \
          does not derive Copy (error E0133)".to_string()
     };
     tcx.lint_hir(SAFE_PACKED_BORROWS,
@@ -602,7 +602,7 @@ fn report_unused_unsafe(tcx: TyCtxt<'_>, used_unsafe: &FxHashSet<hir::HirId>, id
     db.emit();
 }
 
-fn builtin_derive_def_id<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<DefId> {
+fn builtin_derive_def_id(tcx: TyCtxt<'_>, def_id: DefId) -> Option<DefId> {
     debug!("builtin_derive_def_id({:?})", def_id);
     if let Some(impl_def_id) = tcx.impl_of_method(def_id) {
         if tcx.has_attr(impl_def_id, sym::automatically_derived) {
@@ -618,7 +618,7 @@ fn builtin_derive_def_id<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<DefId
     }
 }
 
-pub fn check_unsafety<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) {
+pub fn check_unsafety(tcx: TyCtxt<'_>, def_id: DefId) {
     debug!("check_unsafety({:?})", def_id);
 
     // closures are handled by their parent fn.

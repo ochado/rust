@@ -26,7 +26,7 @@ use super::{
     Memory, Machine
 };
 
-pub struct InterpretCx<'mir, 'tcx, M: Machine<'mir, 'tcx>> {
+pub struct InterpCx<'mir, 'tcx, M: Machine<'mir, 'tcx>> {
     /// Stores the `Machine` instance.
     pub machine: M,
 
@@ -158,14 +158,14 @@ impl<'tcx, Tag: Copy + 'static> LocalState<'tcx, Tag> {
     }
 }
 
-impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> HasDataLayout for InterpretCx<'mir, 'tcx, M> {
+impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> HasDataLayout for InterpCx<'mir, 'tcx, M> {
     #[inline]
     fn data_layout(&self) -> &layout::TargetDataLayout {
         &self.tcx.data_layout
     }
 }
 
-impl<'mir, 'tcx, M> layout::HasTyCtxt<'tcx> for InterpretCx<'mir, 'tcx, M>
+impl<'mir, 'tcx, M> layout::HasTyCtxt<'tcx> for InterpCx<'mir, 'tcx, M>
 where
     M: Machine<'mir, 'tcx>,
 {
@@ -175,7 +175,7 @@ where
     }
 }
 
-impl<'mir, 'tcx, M> layout::HasParamEnv<'tcx> for InterpretCx<'mir, 'tcx, M>
+impl<'mir, 'tcx, M> layout::HasParamEnv<'tcx> for InterpCx<'mir, 'tcx, M>
 where
     M: Machine<'mir, 'tcx>,
 {
@@ -184,7 +184,7 @@ where
     }
 }
 
-impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> LayoutOf for InterpretCx<'mir, 'tcx, M> {
+impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> LayoutOf for InterpCx<'mir, 'tcx, M> {
     type Ty = Ty<'tcx>;
     type TyLayout = InterpResult<'tcx, TyLayout<'tcx>>;
 
@@ -195,13 +195,18 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> LayoutOf for InterpretCx<'mir, 'tcx, M>
     }
 }
 
-impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
-    pub fn new(tcx: TyCtxtAt<'tcx>, param_env: ty::ParamEnv<'tcx>, machine: M) -> Self {
-        InterpretCx {
+impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
+    pub fn new(
+        tcx: TyCtxtAt<'tcx>,
+        param_env: ty::ParamEnv<'tcx>,
+        machine: M,
+        memory_extra: M::MemoryExtra,
+    ) -> Self {
+        InterpCx {
             machine,
             tcx,
             param_env,
-            memory: Memory::new(tcx),
+            memory: Memory::new(tcx, memory_extra),
             stack: Vec::new(),
             vtables: FxHashMap::default(),
         }
@@ -215,6 +220,23 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
     #[inline(always)]
     pub fn memory_mut(&mut self) -> &mut Memory<'mir, 'tcx, M> {
         &mut self.memory
+    }
+
+    #[inline(always)]
+    pub fn force_ptr(
+        &self,
+        scalar: Scalar<M::PointerTag>,
+    ) -> InterpResult<'tcx, Pointer<M::PointerTag>> {
+        self.memory.force_ptr(scalar)
+    }
+
+    #[inline(always)]
+    pub fn force_bits(
+        &self,
+        scalar: Scalar<M::PointerTag>,
+        size: Size
+    ) -> InterpResult<'tcx, u128> {
+        self.memory.force_bits(scalar, size)
     }
 
     #[inline(always)]
@@ -246,6 +268,27 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
     #[inline(always)]
     pub(super) fn body(&self) -> &'mir mir::Body<'tcx> {
         self.frame().body
+    }
+
+    #[inline(always)]
+    pub fn sign_extend(&self, value: u128, ty: TyLayout<'_>) -> u128 {
+        assert!(ty.abi.is_signed());
+        sign_extend(value, ty.size)
+    }
+
+    #[inline(always)]
+    pub fn truncate(&self, value: u128, ty: TyLayout<'_>) -> u128 {
+        truncate(value, ty.size)
+    }
+
+    #[inline]
+    pub fn type_is_sized(&self, ty: Ty<'tcx>) -> bool {
+        ty.is_sized(self.tcx, self.param_env)
+    }
+
+    #[inline]
+    pub fn type_is_freeze(&self, ty: Ty<'tcx>) -> bool {
+        ty.is_freeze(*self.tcx, self.param_env, DUMMY_SP)
     }
 
     pub(super) fn subst_and_normalize_erasing_regions<T: TypeFoldable<'tcx>>(
@@ -281,14 +324,6 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
             def_id,
             substs,
         ).ok_or_else(|| InterpError::TooGeneric.into())
-    }
-
-    pub fn type_is_sized(&self, ty: Ty<'tcx>) -> bool {
-        ty.is_sized(self.tcx, self.param_env)
-    }
-
-    pub fn type_is_freeze(&self, ty: Ty<'tcx>) -> bool {
-        ty.is_freeze(*self.tcx, self.param_env, DUMMY_SP)
     }
 
     pub fn load_mir(
@@ -760,33 +795,5 @@ impl<'mir, 'tcx, M: Machine<'mir, 'tcx>> InterpretCx<'mir, 'tcx, M> {
         }
         trace!("generate stacktrace: {:#?}, {:?}", frames, explicit_span);
         frames
-    }
-
-    #[inline(always)]
-    pub fn sign_extend(&self, value: u128, ty: TyLayout<'_>) -> u128 {
-        assert!(ty.abi.is_signed());
-        sign_extend(value, ty.size)
-    }
-
-    #[inline(always)]
-    pub fn truncate(&self, value: u128, ty: TyLayout<'_>) -> u128 {
-        truncate(value, ty.size)
-    }
-
-    #[inline(always)]
-    pub fn force_ptr(
-        &self,
-        scalar: Scalar<M::PointerTag>,
-    ) -> InterpResult<'tcx, Pointer<M::PointerTag>> {
-        self.memory.force_ptr(scalar)
-    }
-
-    #[inline(always)]
-    pub fn force_bits(
-        &self,
-        scalar: Scalar<M::PointerTag>,
-        size: Size
-    ) -> InterpResult<'tcx, u128> {
-        self.memory.force_bits(scalar, size)
     }
 }

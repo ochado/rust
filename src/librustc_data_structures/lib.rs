@@ -27,6 +27,7 @@
 #![cfg_attr(test, feature(test))]
 
 #![deny(rust_2018_idioms)]
+#![cfg_attr(not(bootstrap), allow(rustc::default_hash_types))]
 
 #[macro_use]
 extern crate log;
@@ -36,10 +37,6 @@ extern crate serialize as rustc_serialize; // used by deriving
 extern crate libc;
 #[macro_use]
 extern crate cfg_if;
-
-// See librustc_cratesio_shim/Cargo.toml for a comment explaining this.
-#[allow(unused_extern_crates)]
-extern crate rustc_cratesio_shim;
 
 pub use rustc_serialize::hex::ToHex;
 
@@ -72,6 +69,7 @@ macro_rules! unlikely {
 pub mod macros;
 pub mod svh;
 pub mod base_n;
+pub mod binary_search_util;
 pub mod bit_set;
 pub mod box_region;
 pub mod const_cstr;

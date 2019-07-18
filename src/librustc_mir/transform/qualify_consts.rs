@@ -142,6 +142,7 @@ impl<'a, 'tcx> ConstCx<'a, 'tcx> {
 #[derive(Copy, Clone, Debug)]
 enum ValueSource<'a, 'tcx> {
     Rvalue(&'a Rvalue<'tcx>),
+    DropAndReplace(&'a Operand<'tcx>),
     Call {
         callee: &'a Operand<'tcx>,
         args: &'a [Operand<'tcx>],
@@ -298,6 +299,7 @@ trait Qualif {
     fn in_value(cx: &ConstCx<'_, 'tcx>, source: ValueSource<'_, 'tcx>) -> bool {
         match source {
             ValueSource::Rvalue(rvalue) => Self::in_rvalue(cx, rvalue),
+            ValueSource::DropAndReplace(source) => Self::in_operand(cx, source),
             ValueSource::Call { callee, args, return_ty } => {
                 Self::in_call(cx, callee, args, return_ty)
             }
@@ -888,7 +890,9 @@ impl<'a, 'tcx> Checker<'a, 'tcx> {
 
             let target = match body[bb].terminator().kind {
                 TerminatorKind::Goto { target } |
+                TerminatorKind::FalseUnwind { real_target: target, .. } |
                 TerminatorKind::Drop { target, .. } |
+                TerminatorKind::DropAndReplace { target, .. } |
                 TerminatorKind::Assert { target, .. } |
                 TerminatorKind::Call { destination: Some((_, target)), .. } => {
                     Some(target)
@@ -900,14 +904,12 @@ impl<'a, 'tcx> Checker<'a, 'tcx> {
                 }
 
                 TerminatorKind::SwitchInt {..} |
-                TerminatorKind::DropAndReplace { .. } |
                 TerminatorKind::Resume |
                 TerminatorKind::Abort |
                 TerminatorKind::GeneratorDrop |
                 TerminatorKind::Yield { .. } |
                 TerminatorKind::Unreachable |
-                TerminatorKind::FalseEdges { .. } |
-                TerminatorKind::FalseUnwind { .. } => None,
+                TerminatorKind::FalseEdges { .. } => None,
 
                 TerminatorKind::Return => {
                     break;
@@ -1393,8 +1395,15 @@ impl<'a, 'tcx> Visitor<'tcx> for Checker<'a, 'tcx> {
             for arg in args {
                 self.visit_operand(arg, location);
             }
-        } else if let TerminatorKind::Drop { location: ref place, .. } = *kind {
-            self.super_terminator_kind(kind, location);
+        } else if let TerminatorKind::Drop {
+            location: ref place, ..
+        } | TerminatorKind::DropAndReplace {
+            location: ref place, ..
+        } = *kind {
+            match *kind {
+                TerminatorKind::DropAndReplace { .. } => {}
+                _ => self.super_terminator_kind(kind, location),
+            }
 
             // Deny *any* live drops anywhere other than functions.
             if self.mode.requires_const_checking() {
@@ -1422,6 +1431,14 @@ impl<'a, 'tcx> Visitor<'tcx> for Checker<'a, 'tcx> {
                             .emit();
                     }
                 }
+            }
+
+            match *kind {
+                TerminatorKind::DropAndReplace { ref value, .. } => {
+                    self.assign(place, ValueSource::DropAndReplace(value), location);
+                    self.visit_operand(value, location);
+                }
+                _ => {}
             }
         } else {
             // Qualify any operands inside other terminators.
@@ -1473,7 +1490,7 @@ pub fn provide(providers: &mut Providers<'_>) {
     };
 }
 
-fn mir_const_qualif<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> (u8, &'tcx BitSet<Local>) {
+fn mir_const_qualif(tcx: TyCtxt<'_>, def_id: DefId) -> (u8, &BitSet<Local>) {
     // N.B., this `borrow()` is guaranteed to be valid (i.e., the value
     // cannot yet be stolen), because `mir_validated()`, which steals
     // from `mir_const(), forces this query to execute before
@@ -1545,7 +1562,7 @@ impl MirPass for QualifyAndPromoteConstants {
                             diag.note("for more information, see issue \
                                        https://github.com/rust-lang/rust/issues/57563");
                             diag.help(
-                                "add #![feature(const_fn)] to the crate attributes to enable",
+                                "add `#![feature(const_fn)]` to the crate attributes to enable",
                             );
                             diag.emit();
                         } else {

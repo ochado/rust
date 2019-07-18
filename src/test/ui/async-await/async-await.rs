@@ -70,12 +70,7 @@ fn async_nonmove_block(x: u8) -> impl Future<Output = u8> {
     }
 }
 
-fn async_closure(x: u8) -> impl Future<Output = u8> {
-    (async move |x: u8| -> u8 {
-        wake_and_yield_once().await;
-        x
-    })(x)
-}
+// see async-closure.rs for async_closure + async_closure_in_unsafe_block
 
 async fn async_fn(x: u8) -> u8 {
     wake_and_yield_once().await;
@@ -127,6 +122,18 @@ async unsafe fn unsafe_async_fn(x: u8) -> u8 {
     x
 }
 
+unsafe fn unsafe_fn(x: u8) -> u8 {
+    x
+}
+
+fn async_block_in_unsafe_block(x: u8) -> impl Future<Output = u8> {
+    unsafe {
+        async move {
+            unsafe_fn(unsafe_async_fn(x).await)
+        }
+    }
+}
+
 struct Foo;
 
 trait Bar {
@@ -134,10 +141,14 @@ trait Bar {
 }
 
 impl Foo {
-    async fn async_method(x: u8) -> u8 {
+    async fn async_assoc_item(x: u8) -> u8 {
         unsafe {
             unsafe_async_fn(x).await
         }
+    }
+
+    async unsafe fn async_unsafe_assoc_item(x: u8) -> u8 {
+        unsafe_async_fn(x).await
     }
 }
 
@@ -176,14 +187,19 @@ fn main() {
     test! {
         async_block,
         async_nonmove_block,
-        async_closure,
         async_fn,
         generic_async_fn,
         async_fn_with_internal_borrow,
-        Foo::async_method,
+        async_block_in_unsafe_block,
+        Foo::async_assoc_item,
         |x| {
             async move {
                 unsafe { unsafe_async_fn(x).await }
+            }
+        },
+        |x| {
+            async move {
+                unsafe { Foo::async_unsafe_assoc_item(x).await }
             }
         },
     }

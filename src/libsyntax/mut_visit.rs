@@ -1261,7 +1261,6 @@ pub fn noop_visit_vis<T: MutVisitor>(Spanned { node, span }: &mut Visibility, vi
 
 #[cfg(test)]
 mod tests {
-    use std::io;
     use crate::ast::{self, Ident};
     use crate::util::parser_testing::{string_to_crate, matches_codepattern};
     use crate::print::pprust;
@@ -1271,7 +1270,7 @@ mod tests {
 
     // this version doesn't care about getting comments or docstrings in.
     fn fake_print_crate(s: &mut pprust::State<'_>,
-                        krate: &ast::Crate) -> io::Result<()> {
+                        krate: &ast::Crate) {
         s.print_mod(&krate.module, &krate.attrs)
     }
 
@@ -1329,7 +1328,7 @@ mod tests {
                 matches_codepattern,
                 "matches_codepattern",
                 pprust::to_string(|s| fake_print_crate(s, &krate)),
-                "macro_rules! zz((zz$zz:zz$(zz $zz:zz)zz+=>(zz$(zz$zz$zz)+)));".to_string());
+                "macro_rules! zz{(zz$zz:zz$(zz $zz:zz)zz+=>(zz$(zz$zz$zz)+))}".to_string());
         })
     }
 }

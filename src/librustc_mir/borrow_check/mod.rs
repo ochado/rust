@@ -41,7 +41,6 @@ use crate::dataflow::MoveDataParamEnv;
 use crate::dataflow::{do_dataflow, DebugFormatted};
 use crate::dataflow::EverInitializedPlaces;
 use crate::dataflow::{MaybeInitializedPlaces, MaybeUninitializedPlaces};
-use crate::util::borrowck_errors::{BorrowckErrors, Origin};
 
 use self::borrow_set::{BorrowData, BorrowSet};
 use self::flows::Flows;
@@ -87,7 +86,7 @@ pub fn provide(providers: &mut Providers<'_>) {
     };
 }
 
-fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> BorrowCheckResult<'tcx> {
+fn mir_borrowck(tcx: TyCtxt<'_>, def_id: DefId) -> BorrowCheckResult<'_> {
     let input_body = tcx.mir_validated(def_id);
     debug!("run query mir_borrowck: {}", tcx.def_path_str(def_id));
 
@@ -275,7 +274,7 @@ fn do_mir_borrowck<'a, 'tcx>(
     mbcx.analyze_results(&mut state); // entry point for DataflowResultsConsumer
 
     // Convert any reservation warnings into lints.
-    let reservation_warnings = mem::replace(&mut mbcx.reservation_warnings, Default::default());
+    let reservation_warnings = mem::take(&mut mbcx.reservation_warnings);
     for (_, (place, span, location, bk, borrow)) in reservation_warnings {
         let mut initial_diag =
             mbcx.report_conflicting_borrow(location, (&place, span), bk, &borrow);
@@ -335,7 +334,7 @@ fn do_mir_borrowck<'a, 'tcx>(
             }
 
             let span = local_decl.source_info.span;
-            if span.compiler_desugaring_kind().is_some() {
+            if span.desugaring_kind().is_some() {
                 // If the `mut` arises as part of a desugaring, we should ignore it.
                 continue;
             }
@@ -422,8 +421,8 @@ fn downgrade_if_error(diag: &mut Diagnostic) {
     }
 }
 
-pub struct MirBorrowckCtxt<'cx, 'tcx> {
-    infcx: &'cx InferCtxt<'cx, 'tcx>,
+crate struct MirBorrowckCtxt<'cx, 'tcx> {
+    crate infcx: &'cx InferCtxt<'cx, 'tcx>,
     body: &'cx Body<'tcx>,
     mir_def_id: DefId,
     move_data: &'cx MoveData<'tcx>,
@@ -1499,11 +1498,9 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         debug!("check_for_local_borrow({:?})", borrow);
 
         if borrow_of_local_data(&borrow.borrowed_place) {
-            let err = self.infcx.tcx
-                .cannot_borrow_across_generator_yield(
+            let err = self.cannot_borrow_across_generator_yield(
                     self.retrieve_borrow_spans(borrow).var_or_use(),
                     yield_span,
-                    Origin::Mir,
                 );
 
             err.buffer(&mut self.errors_buffer);

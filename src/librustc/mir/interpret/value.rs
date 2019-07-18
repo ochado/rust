@@ -262,30 +262,6 @@ impl<'tcx, Tag> Scalar<Tag> {
         }
     }
 
-    /// Returns this pointer's offset from the allocation base, or from NULL (for
-    /// integer pointers).
-    #[inline]
-    pub fn get_ptr_offset(self, cx: &impl HasDataLayout) -> Size {
-        match self {
-            Scalar::Raw { data, size } => {
-                assert_eq!(size as u64, cx.pointer_size().bytes());
-                Size::from_bytes(data as u64)
-            }
-            Scalar::Ptr(ptr) => ptr.offset,
-        }
-    }
-
-    #[inline]
-    pub fn is_null_ptr(self, cx: &impl HasDataLayout) -> bool {
-        match self {
-            Scalar::Raw { data, size } => {
-                assert_eq!(size as u64, cx.data_layout().pointer_size.bytes());
-                data == 0
-            },
-            Scalar::Ptr(_) => false,
-        }
-    }
-
     #[inline]
     pub fn from_bool(b: bool) -> Self {
         Scalar::Raw { data: b as u128, size: 1 }
@@ -350,6 +326,10 @@ impl<'tcx, Tag> Scalar<Tag> {
         Scalar::Raw { data: f.to_bits(), size: 8 }
     }
 
+    /// This is very rarely the method you want!  You should dispatch on the type
+    /// and use `force_bits`/`assert_bits`/`force_ptr`/`assert_ptr`.
+    /// This method only exists for the benefit of low-level memory operations
+    /// as well as the implementation of the `force_*` methods.
     #[inline]
     pub fn to_bits_or_ptr(
         self,
@@ -370,6 +350,7 @@ impl<'tcx, Tag> Scalar<Tag> {
         }
     }
 
+    /// Do not call this method!  Use either `assert_bits` or `force_bits`.
     #[inline]
     pub fn to_bits(self, target_size: Size) -> InterpResult<'tcx, u128> {
         match self {
@@ -383,6 +364,12 @@ impl<'tcx, Tag> Scalar<Tag> {
         }
     }
 
+    #[inline(always)]
+    pub fn assert_bits(self, target_size: Size) -> u128 {
+        self.to_bits(target_size).expect("Expected Raw bits but got a Pointer")
+    }
+
+    /// Do not call this method!  Use either `assert_ptr` or `force_ptr`.
     #[inline]
     pub fn to_ptr(self) -> InterpResult<'tcx, Pointer<Tag>> {
         match self {
@@ -392,6 +379,12 @@ impl<'tcx, Tag> Scalar<Tag> {
         }
     }
 
+    #[inline(always)]
+    pub fn assert_ptr(self) -> Pointer<Tag> {
+        self.to_ptr().expect("Expected a Pointer but got Raw bits")
+    }
+
+    /// Do not call this method!  Dispatch based on the type instead.
     #[inline]
     pub fn is_bits(self) -> bool {
         match self {
@@ -400,6 +393,7 @@ impl<'tcx, Tag> Scalar<Tag> {
         }
     }
 
+    /// Do not call this method!  Dispatch based on the type instead.
     #[inline]
     pub fn is_ptr(self) -> bool {
         match self {
@@ -547,11 +541,13 @@ impl<'tcx, Tag> ScalarMaybeUndef<Tag> {
         }
     }
 
+    /// Do not call this method!  Use either `assert_ptr` or `force_ptr`.
     #[inline(always)]
     pub fn to_ptr(self) -> InterpResult<'tcx, Pointer<Tag>> {
         self.not_undef()?.to_ptr()
     }
 
+    /// Do not call this method!  Use either `assert_bits` or `force_bits`.
     #[inline(always)]
     pub fn to_bits(self, target_size: Size) -> InterpResult<'tcx, u128> {
         self.not_undef()?.to_bits(target_size)

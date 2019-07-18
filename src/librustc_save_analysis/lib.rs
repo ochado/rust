@@ -1,7 +1,6 @@
 #![doc(html_root_url = "https://doc.rust-lang.org/nightly/")]
 #![feature(nll)]
 #![deny(rust_2018_idioms)]
-#![deny(internal)]
 #![deny(unused_lifetimes)]
 #![allow(unused_attributes)]
 
@@ -29,6 +28,7 @@ use std::cell::Cell;
 use std::default::Default;
 use std::env;
 use std::fs::File;
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
 use syntax::ast::{self, Attribute, DUMMY_NODE_ID, NodeId, PatKind};
@@ -37,7 +37,6 @@ use syntax::parse::lexer::comments::strip_doc_comment_decoration;
 use syntax::print::pprust;
 use syntax::visit::{self, Visitor};
 use syntax::print::pprust::{arg_to_string, ty_to_string};
-use syntax::source_map::MacroAttribute;
 use syntax_pos::*;
 
 use json_dumper::JsonDumper;
@@ -134,7 +133,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
 
     pub fn get_extern_item_data(&self, item: &ast::ForeignItem) -> Option<Data> {
         let qualname = format!("::{}",
-            self.tcx.def_path_str(self.tcx.hir().local_def_id(item.id)));
+            self.tcx.def_path_str(self.tcx.hir().local_def_id_from_node_id(item.id)));
         match item.node {
             ast::ForeignItemKind::Fn(ref decl, ref generics) => {
                 filter!(self.span_utils, item.ident.span);
@@ -185,7 +184,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
         match item.node {
             ast::ItemKind::Fn(ref decl, .., ref generics, _) => {
                 let qualname = format!("::{}",
-                    self.tcx.def_path_str(self.tcx.hir().local_def_id(item.id)));
+                    self.tcx.def_path_str(self.tcx.hir().local_def_id_from_node_id(item.id)));
                 filter!(self.span_utils, item.ident.span);
                 Some(Data::DefData(Def {
                     kind: DefKind::Function,
@@ -204,7 +203,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
             }
             ast::ItemKind::Static(ref typ, ..) => {
                 let qualname = format!("::{}",
-                    self.tcx.def_path_str(self.tcx.hir().local_def_id(item.id)));
+                    self.tcx.def_path_str(self.tcx.hir().local_def_id_from_node_id(item.id)));
 
                 filter!(self.span_utils, item.ident.span);
 
@@ -228,7 +227,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
             }
             ast::ItemKind::Const(ref typ, _) => {
                 let qualname = format!("::{}",
-                    self.tcx.def_path_str(self.tcx.hir().local_def_id(item.id)));
+                    self.tcx.def_path_str(self.tcx.hir().local_def_id_from_node_id(item.id)));
                 filter!(self.span_utils, item.ident.span);
 
                 let id = id_from_node_id(item.id, self);
@@ -251,7 +250,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
             }
             ast::ItemKind::Mod(ref m) => {
                 let qualname = format!("::{}",
-                    self.tcx.def_path_str(self.tcx.hir().local_def_id(item.id)));
+                    self.tcx.def_path_str(self.tcx.hir().local_def_id_from_node_id(item.id)));
 
                 let cm = self.tcx.sess.source_map();
                 let filename = cm.span_to_filename(m.inner);
@@ -279,7 +278,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
             ast::ItemKind::Enum(ref def, _) => {
                 let name = item.ident.to_string();
                 let qualname = format!("::{}",
-                    self.tcx.def_path_str(self.tcx.hir().local_def_id(item.id)));
+                    self.tcx.def_path_str(self.tcx.hir().local_def_id_from_node_id(item.id)));
                 filter!(self.span_utils, item.ident.span);
                 let variants_str = def.variants
                     .iter()
@@ -364,10 +363,10 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
         if let Some(ident) = field.ident {
             let name = ident.to_string();
             let qualname = format!("::{}::{}",
-                self.tcx.def_path_str(self.tcx.hir().local_def_id(scope)),
+                self.tcx.def_path_str(self.tcx.hir().local_def_id_from_node_id(scope)),
                 ident);
             filter!(self.span_utils, ident.span);
-            let def_id = self.tcx.hir().local_def_id(field.id);
+            let def_id = self.tcx.hir().local_def_id_from_node_id(field.id);
             let typ = self.tcx.type_of(def_id).to_string();
 
 
@@ -399,7 +398,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
         // The qualname for a method is the trait name or name of the struct in an impl in
         // which the method is declared in, followed by the method's name.
         let (qualname, parent_scope, decl_id, docs, attributes) =
-            match self.tcx.impl_of_method(self.tcx.hir().local_def_id(id)) {
+            match self.tcx.impl_of_method(self.tcx.hir().local_def_id_from_node_id(id)) {
                 Some(impl_id) => match self.tcx.hir().get_if_local(impl_id) {
                     Some(Node::Item(item)) => match item.node {
                         hir::ItemKind::Impl(.., ref ty, _) => {
@@ -450,7 +449,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
                         );
                     }
                 },
-                None => match self.tcx.trait_of_item(self.tcx.hir().local_def_id(id)) {
+                None => match self.tcx.trait_of_item(self.tcx.hir().local_def_id_from_node_id(id)) {
                     Some(def_id) => {
                         let mut docs = String::new();
                         let mut attrs = vec![];
@@ -842,10 +841,10 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
         let callsite = span.source_callsite();
         let callsite_span = self.span_from_span(callsite);
         let callee = span.source_callee()?;
-        let callee_span = callee.def_site?;
 
         // Ignore attribute macros, their spans are usually mangled
-        if let MacroAttribute(_) = callee.format {
+        if let ExpnKind::Macro(MacroKind::Attr, _) |
+               ExpnKind::Macro(MacroKind::Derive, _) = callee.kind {
             return None;
         }
 
@@ -856,7 +855,7 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
             .sess
             .imported_macro_spans
             .borrow()
-            .get(&callee_span)
+            .get(&callee.def_site)
         {
             let &(ref mac_name, mac_span) = mac;
             let mac_span = self.span_from_span(mac_span);
@@ -867,10 +866,10 @@ impl<'l, 'tcx> SaveContext<'l, 'tcx> {
             });
         }
 
-        let callee_span = self.span_from_span(callee_span);
+        let callee_span = self.span_from_span(callee.def_site);
         Some(MacroRef {
             span: callsite_span,
-            qualname: callee.format.name().to_string(), // FIXME: generate the real qualname
+            qualname: callee.kind.descr().to_string(), // FIXME: generate the real qualname
             callee_span,
         })
     }
@@ -1025,7 +1024,7 @@ impl<'a> DumpHandler<'a> {
         }
     }
 
-    fn output_file(&self, ctx: &SaveContext<'_, '_>) -> (File, PathBuf) {
+    fn output_file(&self, ctx: &SaveContext<'_, '_>) -> (BufWriter<File>, PathBuf) {
         let sess = &ctx.tcx.sess;
         let file_name = match ctx.config.output_file {
             Some(ref s) => PathBuf::from(s),
@@ -1059,9 +1058,9 @@ impl<'a> DumpHandler<'a> {
 
         info!("Writing output to {}", file_name.display());
 
-        let output_file = File::create(&file_name).unwrap_or_else(
+        let output_file = BufWriter::new(File::create(&file_name).unwrap_or_else(
             |e| sess.fatal(&format!("Could not open {}: {}", file_name.display(), e)),
-        );
+        ));
 
         (output_file, file_name)
     }
@@ -1192,7 +1191,7 @@ fn id_from_def_id(id: DefId) -> rls_data::Id {
 }
 
 fn id_from_node_id(id: NodeId, scx: &SaveContext<'_, '_>) -> rls_data::Id {
-    let def_id = scx.tcx.hir().opt_local_def_id(id);
+    let def_id = scx.tcx.hir().opt_local_def_id_from_node_id(id);
     def_id.map(|id| id_from_def_id(id)).unwrap_or_else(|| {
         // Create a *fake* `DefId` out of a `NodeId` by subtracting the `NodeId`
         // out of the maximum u32 value. This will work unless you have *billions*

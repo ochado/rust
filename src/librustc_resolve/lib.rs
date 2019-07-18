@@ -4,23 +4,23 @@
 
 #![feature(crate_visibility_modifier)]
 #![feature(label_break_value)]
+#![feature(mem_take)]
 #![feature(nll)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(type_alias_enum_variants)]
 
 #![recursion_limit="256"]
 
 #![deny(rust_2018_idioms)]
-#![deny(internal)]
 #![deny(unused_lifetimes)]
 
 pub use rustc::hir::def::{Namespace, PerNS};
 
+use Determinacy::*;
 use GenericParameters::*;
 use RibKind::*;
 use smallvec::smallvec;
 
-use rustc::hir::map::{Definitions, DefCollector};
+use rustc::hir::map::Definitions;
 use rustc::hir::{self, PrimTy, Bool, Char, Float, Int, Uint, Str};
 use rustc::middle::cstore::CrateStore;
 use rustc::session::Session;
@@ -41,8 +41,7 @@ use rustc_metadata::cstore::CStore;
 use syntax::source_map::SourceMap;
 use syntax::ext::hygiene::{Mark, Transparency, SyntaxContext};
 use syntax::ast::{self, Name, NodeId, Ident, FloatTy, IntTy, UintTy};
-use syntax::ext::base::{SyntaxExtension, SyntaxExtensionKind};
-use syntax::ext::base::Determinacy::{self, Determined, Undetermined};
+use syntax::ext::base::SyntaxExtension;
 use syntax::ext::base::MacroKind;
 use syntax::symbol::{Symbol, kw, sym};
 use syntax::util::lev_distance::find_best_match_for_name;
@@ -53,7 +52,7 @@ use syntax::ast::{CRATE_NODE_ID, Arm, IsAsync, BindingMode, Block, Crate, Expr, 
 use syntax::ast::{FnDecl, ForeignItem, ForeignItemKind, GenericParamKind, Generics};
 use syntax::ast::{Item, ItemKind, ImplItem, ImplItemKind};
 use syntax::ast::{Label, Local, Mutability, Pat, PatKind, Path};
-use syntax::ast::{QSelf, TraitItemKind, TraitRef, Ty, TyKind};
+use syntax::ast::{QSelf, TraitItem, TraitItemKind, TraitRef, Ty, TyKind};
 use syntax::ptr::P;
 use syntax::{span_err, struct_span_err, unwrap_or, walk_list};
 
@@ -92,6 +91,18 @@ fn is_known_tool(name: Name) -> bool {
 enum Weak {
     Yes,
     No,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum Determinacy {
+    Determined,
+    Undetermined,
+}
+
+impl Determinacy {
+    fn determined(determined: bool) -> Determinacy {
+        if determined { Determinacy::Determined } else { Determinacy::Undetermined }
+    }
 }
 
 enum ScopeSet {
@@ -198,9 +209,9 @@ enum ResolutionError<'a> {
 ///
 /// This takes the error provided, combines it with the span and any additional spans inside the
 /// error and emits it.
-fn resolve_error<'sess, 'a>(resolver: &'sess Resolver<'_>,
-                            span: Span,
-                            resolution_error: ResolutionError<'a>) {
+fn resolve_error(resolver: &Resolver<'_>,
+                 span: Span,
+                 resolution_error: ResolutionError<'_>) {
     resolve_struct_error(resolver, span, resolution_error).emit();
 }
 
@@ -1042,6 +1053,7 @@ impl<'a, R> Rib<'a, R> {
 /// This refers to the thing referred by a name. The difference between `Res` and `Item` is that
 /// items are visible in their whole block, while `Res`es only from the place they are defined
 /// forward.
+#[derive(Debug)]
 enum LexicalScopeBinding<'a> {
     Item(&'a NameBinding<'a>),
     Res(Res),
@@ -1590,6 +1602,9 @@ pub struct Resolver<'a> {
     /// The trait that the current context can refer to.
     current_trait_ref: Option<(Module<'a>, TraitRef)>,
 
+    /// The current trait's associated types' ident, used for diagnostic suggestions.
+    current_trait_assoc_types: Vec<Ident>,
+
     /// The current self type if inside an impl (used for better errors).
     current_self_type: Option<Ty>,
 
@@ -1664,13 +1679,13 @@ pub struct Resolver<'a> {
     macro_use_prelude: FxHashMap<Name, &'a NameBinding<'a>>,
     pub all_macros: FxHashMap<Name, Res>,
     macro_map: FxHashMap<DefId, Lrc<SyntaxExtension>>,
+    dummy_ext_bang: Lrc<SyntaxExtension>,
+    dummy_ext_derive: Lrc<SyntaxExtension>,
     non_macro_attrs: [Lrc<SyntaxExtension>; 2],
     macro_defs: FxHashMap<Mark, DefId>,
     local_macro_def_scopes: FxHashMap<NodeId, Module<'a>>,
-
-    /// List of crate local macros that we need to warn about as being unused.
-    /// Right now this only includes macro_rules! macros, and macros 2.0.
-    unused_macros: FxHashSet<DefId>,
+    unused_macros: NodeMap<Span>,
+    proc_macro_stubs: NodeSet,
 
     /// Maps the `Mark` of an expansion to its containing module or block.
     invocations: FxHashMap<Mark, &'a InvocationData<'a>>,
@@ -1688,6 +1703,9 @@ pub struct Resolver<'a> {
     current_type_ascription: Vec<Span>,
 
     injected_crate: Option<Module<'a>>,
+
+    /// Features enabled for this crate.
+    active_features: FxHashSet<Symbol>,
 }
 
 /// Nothing really interesting here; it just provides memory for the rest of the crate.
@@ -1902,8 +1920,7 @@ impl<'a> Resolver<'a> {
         module_map.insert(DefId::local(CRATE_DEF_INDEX), graph_root);
 
         let mut definitions = Definitions::default();
-        DefCollector::new(&mut definitions, Mark::root())
-            .collect_root(crate_name, session.local_crate_disambiguator());
+        definitions.create_root_def(crate_name, session.local_crate_disambiguator());
 
         let mut extern_prelude: FxHashMap<Ident, ExternPreludeEntry<'_>> =
             session.opts.externs.iter().map(|kv| (Ident::from_str(kv.0), Default::default()))
@@ -1926,9 +1943,9 @@ impl<'a> Resolver<'a> {
         let mut macro_defs = FxHashMap::default();
         macro_defs.insert(Mark::root(), root_def_id);
 
-        let non_macro_attr = |mark_used| Lrc::new(SyntaxExtension::default(
-            SyntaxExtensionKind::NonMacroAttr { mark_used }, session.edition()
-        ));
+        let features = session.features_untracked();
+        let non_macro_attr =
+            |mark_used| Lrc::new(SyntaxExtension::non_macro_attr(mark_used, session.edition()));
 
         Resolver {
             session,
@@ -1958,6 +1975,7 @@ impl<'a> Resolver<'a> {
             label_ribs: Vec::new(),
 
             current_trait_ref: None,
+            current_trait_assoc_types: Vec::new(),
             current_self_type: None,
             current_self_item: None,
             last_import_segment: false,
@@ -2003,6 +2021,8 @@ impl<'a> Resolver<'a> {
             macro_use_prelude: FxHashMap::default(),
             all_macros: FxHashMap::default(),
             macro_map: FxHashMap::default(),
+            dummy_ext_bang: Lrc::new(SyntaxExtension::dummy_bang(session.edition())),
+            dummy_ext_derive: Lrc::new(SyntaxExtension::dummy_derive(session.edition())),
             non_macro_attrs: [non_macro_attr(false), non_macro_attr(true)],
             invocations,
             macro_defs,
@@ -2010,9 +2030,14 @@ impl<'a> Resolver<'a> {
             name_already_seen: FxHashMap::default(),
             potentially_unused_imports: Vec::new(),
             struct_constructors: Default::default(),
-            unused_macros: FxHashSet::default(),
+            unused_macros: Default::default(),
+            proc_macro_stubs: Default::default(),
             current_type_ascription: Vec::new(),
             injected_crate: None,
+            active_features:
+                features.declared_lib_features.iter().map(|(feat, ..)| *feat)
+                    .chain(features.declared_lang_features.iter().map(|(feat, ..)| *feat))
+                    .collect(),
         }
     }
 
@@ -2022,6 +2047,14 @@ impl<'a> Resolver<'a> {
 
     fn non_macro_attr(&self, mark_used: bool) -> Lrc<SyntaxExtension> {
         self.non_macro_attrs[mark_used as usize].clone()
+    }
+
+    fn dummy_ext(&self, macro_kind: MacroKind) -> Lrc<SyntaxExtension> {
+        match macro_kind {
+            MacroKind::Bang => self.dummy_ext_bang.clone(),
+            MacroKind::Derive => self.dummy_ext_derive.clone(),
+            MacroKind::Attr => self.non_macro_attr(true),
+        }
     }
 
     /// Runs the function on each namespace.
@@ -2219,6 +2252,7 @@ impl<'a> Resolver<'a> {
         }
 
         if !module.no_implicit_prelude {
+            ident.span.adjust(Mark::root());
             if ns == TypeNS {
                 if let Some(binding) = self.extern_prelude_get(ident, !record_used) {
                     return Some(LexicalScopeBinding::Item(binding));
@@ -2519,17 +2553,7 @@ impl<'a> Resolver<'a> {
         debug!("(resolving item) resolving {} ({:?})", name, item.node);
 
         match item.node {
-            ItemKind::Ty(_, ref generics) => {
-                self.with_current_self_item(item, |this| {
-                    this.with_generic_param_rib(HasGenericParams(generics, ItemRibKind), |this| {
-                        let item_def_id = this.definitions.local_def_id(item.id);
-                        this.with_self_rib(Res::SelfTy(Some(item_def_id), None), |this| {
-                            visit::walk_item(this, item)
-                        })
-                    })
-                });
-            }
-
+            ItemKind::Ty(_, ref generics) |
             ItemKind::Existential(_, ref generics) |
             ItemKind::Fn(_, _, ref generics, _) => {
                 self.with_generic_param_rib(
@@ -2560,32 +2584,36 @@ impl<'a> Resolver<'a> {
                         walk_list!(this, visit_param_bound, bounds);
 
                         for trait_item in trait_items {
-                            let generic_params = HasGenericParams(&trait_item.generics,
-                                                                    AssocItemRibKind);
-                            this.with_generic_param_rib(generic_params, |this| {
-                                match trait_item.node {
-                                    TraitItemKind::Const(ref ty, ref default) => {
-                                        this.visit_ty(ty);
+                            this.with_trait_items(trait_items, |this| {
+                                let generic_params = HasGenericParams(
+                                    &trait_item.generics,
+                                    AssocItemRibKind,
+                                );
+                                this.with_generic_param_rib(generic_params, |this| {
+                                    match trait_item.node {
+                                        TraitItemKind::Const(ref ty, ref default) => {
+                                            this.visit_ty(ty);
 
-                                        // Only impose the restrictions of
-                                        // ConstRibKind for an actual constant
-                                        // expression in a provided default.
-                                        if let Some(ref expr) = *default{
-                                            this.with_constant_rib(|this| {
-                                                this.visit_expr(expr);
-                                            });
+                                            // Only impose the restrictions of
+                                            // ConstRibKind for an actual constant
+                                            // expression in a provided default.
+                                            if let Some(ref expr) = *default{
+                                                this.with_constant_rib(|this| {
+                                                    this.visit_expr(expr);
+                                                });
+                                            }
                                         }
-                                    }
-                                    TraitItemKind::Method(_, _) => {
-                                        visit::walk_trait_item(this, trait_item)
-                                    }
-                                    TraitItemKind::Type(..) => {
-                                        visit::walk_trait_item(this, trait_item)
-                                    }
-                                    TraitItemKind::Macro(_) => {
-                                        panic!("unexpanded macro in resolve!")
-                                    }
-                                };
+                                        TraitItemKind::Method(_, _) => {
+                                            visit::walk_trait_item(this, trait_item)
+                                        }
+                                        TraitItemKind::Type(..) => {
+                                            visit::walk_trait_item(this, trait_item)
+                                        }
+                                        TraitItemKind::Macro(_) => {
+                                            panic!("unexpanded macro in resolve!")
+                                        }
+                                    };
+                                });
                             });
                         }
                     });
@@ -2752,6 +2780,22 @@ impl<'a> Resolver<'a> {
         let previous_value = replace(&mut self.current_self_item, Some(self_item.id));
         let result = f(self);
         self.current_self_item = previous_value;
+        result
+    }
+
+    /// When evaluating a `trait` use its associated types' idents for suggestionsa in E0412.
+    fn with_trait_items<T, F>(&mut self, trait_items: &Vec<TraitItem>, f: F) -> T
+        where F: FnOnce(&mut Resolver<'_>) -> T
+    {
+        let trait_assoc_types = replace(
+            &mut self.current_trait_assoc_types,
+            trait_items.iter().filter_map(|item| match &item.node {
+                TraitItemKind::Type(bounds, _) if bounds.len() == 0 => Some(item.ident),
+                _ => None,
+            }).collect(),
+        );
+        let result = f(self);
+        self.current_trait_assoc_types = trait_assoc_types;
         result
     }
 
@@ -3445,8 +3489,12 @@ impl<'a> Resolver<'a> {
     }
 
     fn self_type_is_available(&mut self, span: Span) -> bool {
-        let binding = self.resolve_ident_in_lexical_scope(Ident::with_empty_ctxt(kw::SelfUpper),
-                                                          TypeNS, None, span);
+        let binding = self.resolve_ident_in_lexical_scope(
+            Ident::with_empty_ctxt(kw::SelfUpper),
+            TypeNS,
+            None,
+            span,
+        );
         if let Some(LexicalScopeBinding::Res(res)) = binding { res != Res::Err } else { false }
     }
 
@@ -4076,13 +4124,12 @@ impl<'a> Resolver<'a> {
         res
     }
 
-    fn lookup_assoc_candidate<FilterFn>(&mut self,
-                                        ident: Ident,
-                                        ns: Namespace,
-                                        filter_fn: FilterFn)
-                                        -> Option<AssocSuggestion>
-        where FilterFn: Fn(Res) -> bool
-    {
+    fn lookup_assoc_candidate<FilterFn: Fn(Res) -> bool>(
+        &mut self,
+        ident: Ident,
+        ns: Namespace,
+        filter_fn: FilterFn,
+    ) -> Option<AssocSuggestion> {
         fn extract_node_id(t: &Ty) -> Option<NodeId> {
             match t.node {
                 TyKind::Path(None, _) => Some(t.id),
@@ -4114,6 +4161,12 @@ impl<'a> Resolver<'a> {
             }
         }
 
+        for assoc_type_ident in &self.current_trait_assoc_types {
+            if *assoc_type_ident == ident {
+                return Some(AssocSuggestion::AssocItem);
+            }
+        }
+
         // Look for associated items in the current trait.
         if let Some((module, _)) = self.current_trait_ref {
             if let Ok(binding) = self.resolve_ident_in_module(
@@ -4126,6 +4179,7 @@ impl<'a> Resolver<'a> {
                 ) {
                 let res = binding.res();
                 if filter_fn(res) {
+                    debug!("extract_node_id res not filtered");
                     return Some(if self.has_self.contains(&res.def_id()) {
                         AssocSuggestion::MethodWithSelf
                     } else {

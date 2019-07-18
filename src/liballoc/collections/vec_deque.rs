@@ -2206,6 +2206,11 @@ impl<'a, T> Iterator for Iter<'a, T> {
         self.tail = self.head - iter.len();
         final_res
     }
+
+    #[inline]
+    fn last(mut self) -> Option<&'a T> {
+        self.next_back()
+    }
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -2318,6 +2323,11 @@ impl<'a, T> Iterator for IterMut<'a, T> {
         let (front, back) = RingSlices::ring_slices(self.ring, self.head, self.tail);
         accum = front.iter_mut().fold(accum, &mut f);
         back.iter_mut().fold(accum, &mut f)
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<&'a mut T> {
+        self.next_back()
     }
 }
 
@@ -2711,6 +2721,9 @@ impl<T: fmt::Debug> fmt::Debug for VecDeque<T> {
 impl<T> From<Vec<T>> for VecDeque<T> {
     /// Turn a [`Vec<T>`] into a [`VecDeque<T>`].
     ///
+    /// [`Vec<T>`]: crate::vec::Vec
+    /// [`VecDeque<T>`]: crate::collections::VecDeque
+    ///
     /// This avoids reallocating where possible, but the conditions for that are
     /// strict, and subject to change, and so shouldn't be relied upon unless the
     /// `Vec<T>` came from `From<VecDeque<T>>` and hasn't been reallocated.
@@ -2741,6 +2754,9 @@ impl<T> From<Vec<T>> for VecDeque<T> {
 #[stable(feature = "vecdeque_vec_conversions", since = "1.10.0")]
 impl<T> From<VecDeque<T>> for Vec<T> {
     /// Turn a [`VecDeque<T>`] into a [`Vec<T>`].
+    ///
+    /// [`Vec<T>`]: crate::vec::Vec
+    /// [`VecDeque<T>`]: crate::collections::VecDeque
     ///
     /// This never needs to re-allocate, but does need to do O(n) data movement if
     /// the circular buffer doesn't happen to be at the beginning of the allocation.

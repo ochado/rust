@@ -7,11 +7,11 @@ use std::hash::Hash;
 
 use rustc::hir::def_id::DefId;
 use rustc::mir;
-use rustc::ty::{self, query::TyCtxtAt};
+use rustc::ty::{self, TyCtxt};
 
 use super::{
-    Allocation, AllocId, InterpResult, Scalar, AllocationExtra,
-    InterpretCx, PlaceTy, OpTy, ImmTy, MemoryKind, Pointer, Memory
+    Allocation, AllocId, InterpResult, InterpError, Scalar, AllocationExtra,
+    InterpCx, PlaceTy, OpTy, ImmTy, MemoryKind, Pointer, Memory,
 };
 
 /// Whether this kind of memory is allowed to leak
@@ -67,13 +67,18 @@ pub trait Machine<'mir, 'tcx>: Sized {
     /// The `default()` is used for pointers to consts, statics, vtables and functions.
     type PointerTag: ::std::fmt::Debug + Copy + Eq + Hash + 'static;
 
+    /// Machines can define extra (non-instance) things that represent values of function pointers.
+    /// For example, Miri uses this to return a fucntion pointer from `dlsym`
+    /// that can later be called to execute the right thing.
+    type ExtraFnVal: ::std::fmt::Debug + Copy;
+
     /// Extra data stored in every call frame.
     type FrameExtra;
 
     /// Extra data stored in memory. A reference to this is available when `AllocExtra`
     /// gets initialized, so you can e.g., have an `Rc` here if there is global state you
     /// need access to in the `AllocExtra` hooks.
-    type MemoryExtra: Default;
+    type MemoryExtra;
 
     /// Extra data stored in every allocation.
     type AllocExtra: AllocationExtra<Self::PointerTag> + 'static;
@@ -95,11 +100,11 @@ pub trait Machine<'mir, 'tcx>: Sized {
     const STATIC_KIND: Option<Self::MemoryKinds>;
 
     /// Whether to enforce the validity invariant
-    fn enforce_validity(ecx: &InterpretCx<'mir, 'tcx, Self>) -> bool;
+    fn enforce_validity(ecx: &InterpCx<'mir, 'tcx, Self>) -> bool;
 
     /// Called before a basic block terminator is executed.
     /// You can use this to detect endlessly running programs.
-    fn before_terminator(ecx: &mut InterpretCx<'mir, 'tcx, Self>) -> InterpResult<'tcx>;
+    fn before_terminator(ecx: &mut InterpCx<'mir, 'tcx, Self>) -> InterpResult<'tcx>;
 
     /// Entry point to all function calls.
     ///
@@ -112,17 +117,27 @@ pub trait Machine<'mir, 'tcx>: Sized {
     /// Passing `dest`and `ret` in the same `Option` proved very annoying when only one of them
     /// was used.
     fn find_fn(
-        ecx: &mut InterpretCx<'mir, 'tcx, Self>,
+        ecx: &mut InterpCx<'mir, 'tcx, Self>,
         instance: ty::Instance<'tcx>,
         args: &[OpTy<'tcx, Self::PointerTag>],
         dest: Option<PlaceTy<'tcx, Self::PointerTag>>,
         ret: Option<mir::BasicBlock>,
     ) -> InterpResult<'tcx, Option<&'mir mir::Body<'tcx>>>;
 
+    /// Execute `fn_val`.  it is the hook's responsibility to advance the instruction
+    /// pointer as appropriate.
+    fn call_extra_fn(
+        ecx: &mut InterpCx<'mir, 'tcx, Self>,
+        fn_val: Self::ExtraFnVal,
+        args: &[OpTy<'tcx, Self::PointerTag>],
+        dest: Option<PlaceTy<'tcx, Self::PointerTag>>,
+        ret: Option<mir::BasicBlock>,
+    ) -> InterpResult<'tcx>;
+
     /// Directly process an intrinsic without pushing a stack frame.
     /// If this returns successfully, the engine will take care of jumping to the next block.
     fn call_intrinsic(
-        ecx: &mut InterpretCx<'mir, 'tcx, Self>,
+        ecx: &mut InterpCx<'mir, 'tcx, Self>,
         instance: ty::Instance<'tcx>,
         args: &[OpTy<'tcx, Self::PointerTag>],
         dest: PlaceTy<'tcx, Self::PointerTag>,
@@ -136,8 +151,8 @@ pub trait Machine<'mir, 'tcx>: Sized {
     ///
     /// This allocation will then be fed to `tag_allocation` to initialize the "extra" state.
     fn find_foreign_static(
+        tcx: TyCtxt<'tcx>,
         def_id: DefId,
-        tcx: TyCtxtAt<'tcx>,
     ) -> InterpResult<'tcx, Cow<'tcx, Allocation>>;
 
     /// Called for all binary operations on integer(-like) types when one operand is a pointer
@@ -145,7 +160,7 @@ pub trait Machine<'mir, 'tcx>: Sized {
     ///
     /// Returns a (value, overflowed) pair if the operation succeeded
     fn ptr_op(
-        ecx: &InterpretCx<'mir, 'tcx, Self>,
+        ecx: &InterpCx<'mir, 'tcx, Self>,
         bin_op: mir::BinOp,
         left: ImmTy<'tcx, Self::PointerTag>,
         right: ImmTy<'tcx, Self::PointerTag>,
@@ -153,7 +168,7 @@ pub trait Machine<'mir, 'tcx>: Sized {
 
     /// Heap allocations via the `box` keyword.
     fn box_alloc(
-        ecx: &mut InterpretCx<'mir, 'tcx, Self>,
+        ecx: &mut InterpCx<'mir, 'tcx, Self>,
         dest: PlaceTy<'tcx, Self::PointerTag>,
     ) -> InterpResult<'tcx>;
 
@@ -174,10 +189,10 @@ pub trait Machine<'mir, 'tcx>: Sized {
     /// For static allocations, the tag returned must be the same as the one returned by
     /// `tag_static_base_pointer`.
     fn tag_allocation<'b>(
+        memory_extra: &Self::MemoryExtra,
         id: AllocId,
         alloc: Cow<'b, Allocation>,
         kind: Option<MemoryKind<Self::MemoryKinds>>,
-        memory: &Memory<'mir, 'tcx, Self>,
     ) -> (Cow<'b, Allocation<Self::PointerTag, Self::AllocExtra>>, Self::PointerTag);
 
     /// Return the "base" tag for the given static allocation: the one that is used for direct
@@ -186,14 +201,14 @@ pub trait Machine<'mir, 'tcx>: Sized {
     /// Be aware that requesting the `Allocation` for that `id` will lead to cycles
     /// for cyclic statics!
     fn tag_static_base_pointer(
+        memory_extra: &Self::MemoryExtra,
         id: AllocId,
-        memory: &Memory<'mir, 'tcx, Self>,
     ) -> Self::PointerTag;
 
     /// Executes a retagging operation
     #[inline]
     fn retag(
-        _ecx: &mut InterpretCx<'mir, 'tcx, Self>,
+        _ecx: &mut InterpCx<'mir, 'tcx, Self>,
         _kind: mir::RetagKind,
         _place: PlaceTy<'tcx, Self::PointerTag>,
     ) -> InterpResult<'tcx> {
@@ -201,28 +216,30 @@ pub trait Machine<'mir, 'tcx>: Sized {
     }
 
     /// Called immediately before a new stack frame got pushed
-    fn stack_push(ecx: &mut InterpretCx<'mir, 'tcx, Self>) -> InterpResult<'tcx, Self::FrameExtra>;
+    fn stack_push(ecx: &mut InterpCx<'mir, 'tcx, Self>) -> InterpResult<'tcx, Self::FrameExtra>;
 
     /// Called immediately after a stack frame gets popped
     fn stack_pop(
-        ecx: &mut InterpretCx<'mir, 'tcx, Self>,
+        ecx: &mut InterpCx<'mir, 'tcx, Self>,
         extra: Self::FrameExtra,
     ) -> InterpResult<'tcx>;
 
+    #[inline(always)]
     fn int_to_ptr(
-        int: u64,
         _mem: &Memory<'mir, 'tcx, Self>,
+        int: u64,
     ) -> InterpResult<'tcx, Pointer<Self::PointerTag>> {
-        if int == 0 {
-            err!(InvalidNullPointerUsage)
+        Err((if int == 0 {
+            InterpError::InvalidNullPointerUsage
         } else {
-            err!(ReadBytesAsPointer)
-        }
+            InterpError::ReadBytesAsPointer
+        }).into())
     }
 
+    #[inline(always)]
     fn ptr_to_int(
-        _ptr: Pointer<Self::PointerTag>,
         _mem: &Memory<'mir, 'tcx, Self>,
+        _ptr: Pointer<Self::PointerTag>,
     ) -> InterpResult<'tcx, u64> {
         err!(ReadPointerAsBytes)
     }

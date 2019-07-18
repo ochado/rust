@@ -12,6 +12,7 @@ pub use self::UnsafeSource::*;
 
 use crate::hir::def::{Res, DefKind};
 use crate::hir::def_id::{DefId, DefIndex, LocalDefId, CRATE_DEF_INDEX};
+use crate::hir::ptr::P;
 use crate::util::nodemap::{NodeMap, FxHashSet};
 use crate::mir::mono::Linkage;
 
@@ -23,7 +24,6 @@ use syntax::ast::{self, CrateSugar, Ident, Name, NodeId, AsmDialect};
 use syntax::ast::{Attribute, Label, LitKind, StrStyle, FloatTy, IntTy, UintTy};
 use syntax::attr::{InlineAttr, OptimizeAttr};
 use syntax::ext::hygiene::SyntaxContext;
-use syntax::ptr::P;
 use syntax::symbol::{Symbol, kw};
 use syntax::tokenstream::TokenStream;
 use syntax::util::parser::ExprPrecedence;
@@ -63,6 +63,7 @@ pub mod lowering;
 pub mod map;
 pub mod pat_util;
 pub mod print;
+pub mod ptr;
 pub mod upvars;
 
 /// Uniquely identifies a node in the HIR of the current crate. It is
@@ -726,6 +727,8 @@ pub struct Crate {
     pub attrs: HirVec<Attribute>,
     pub span: Span,
     pub exported_macros: HirVec<MacroDef>,
+    // Attributes from non-exported macros, kept only for collecting the library feature list.
+    pub non_exported_macro_attrs: HirVec<Attribute>,
 
     // N.B., we use a BTreeMap here so that `visit_all_items` iterates
     // over the ids in increasing order. In principle it should not
@@ -1404,7 +1407,6 @@ impl Expr {
             ExprKind::Lit(_) => ExprPrecedence::Lit,
             ExprKind::Type(..) | ExprKind::Cast(..) => ExprPrecedence::Cast,
             ExprKind::DropTemps(ref expr, ..) => expr.precedence(),
-            ExprKind::While(..) => ExprPrecedence::While,
             ExprKind::Loop(..) => ExprPrecedence::Loop,
             ExprKind::Match(..) => ExprPrecedence::Match,
             ExprKind::Closure(..) => ExprPrecedence::Closure,
@@ -1463,7 +1465,6 @@ impl Expr {
             ExprKind::Break(..) |
             ExprKind::Continue(..) |
             ExprKind::Ret(..) |
-            ExprKind::While(..) |
             ExprKind::Loop(..) |
             ExprKind::Assign(..) |
             ExprKind::InlineAsm(..) |
@@ -1531,10 +1532,6 @@ pub enum ExprKind {
     /// This construct only exists to tweak the drop order in HIR lowering.
     /// An example of that is the desugaring of `for` loops.
     DropTemps(P<Expr>),
-    /// A while loop, with an optional label
-    ///
-    /// I.e., `'label: while expr { <block> }`.
-    While(P<Expr>, P<Block>, Option<Label>),
     /// A conditionless loop (can be exited with `break`, `continue`, or `return`).
     ///
     /// I.e., `'label: loop { <block> }`.
@@ -1652,6 +1649,8 @@ pub enum MatchSource {
     IfLetDesugar {
         contains_else_clause: bool,
     },
+    /// A `while _ { .. }` (which was desugared to a `loop { match _ { .. } }`).
+    WhileDesugar,
     /// A `while let _ = _ { .. }` (which was desugared to a
     /// `loop { match _ { .. } }`).
     WhileLetDesugar,
@@ -1668,10 +1667,23 @@ pub enum MatchSource {
 pub enum LoopSource {
     /// A `loop { .. }` loop.
     Loop,
+    /// A `while _ { .. }` loop.
+    While,
     /// A `while let _ = _ { .. }` loop.
     WhileLet,
     /// A `for _ in _ { .. }` loop.
     ForLoop,
+}
+
+impl LoopSource {
+    pub fn name(self) -> &'static str {
+        match self {
+            LoopSource::Loop => "loop",
+            LoopSource::While => "while",
+            LoopSource::WhileLet => "while let",
+            LoopSource::ForLoop => "for",
+        }
+    }
 }
 
 #[derive(Copy, Clone, RustcEncodable, RustcDecodable, Debug, HashStable)]
@@ -1713,7 +1725,7 @@ pub enum GeneratorMovability {
 }
 
 /// The yield kind that caused an `ExprKind::Yield`.
-#[derive(Copy, Clone, Debug, RustcEncodable, RustcDecodable, HashStable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RustcEncodable, RustcDecodable, HashStable)]
 pub enum YieldSource {
     /// An `<expr>.await`.
     Await,
@@ -1979,13 +1991,15 @@ pub struct InlineAsmOutput {
     pub span: Span,
 }
 
+// NOTE(eddyb) This is used within MIR as well, so unlike the rest of the HIR,
+// it needs to be `Clone` and use plain `Vec<T>` instead of `HirVec<T>`.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug, HashStable)]
 pub struct InlineAsm {
     pub asm: Symbol,
     pub asm_str_style: StrStyle,
-    pub outputs: HirVec<InlineAsmOutput>,
-    pub inputs: HirVec<Symbol>,
-    pub clobbers: HirVec<Symbol>,
+    pub outputs: Vec<InlineAsmOutput>,
+    pub inputs: Vec<Symbol>,
+    pub clobbers: Vec<Symbol>,
     pub volatile: bool,
     pub alignstack: bool,
     pub dialect: AsmDialect,
@@ -2217,7 +2231,7 @@ pub enum UseKind {
 /// within the resolution map.
 #[derive(RustcEncodable, RustcDecodable, Debug, HashStable)]
 pub struct TraitRef {
-    pub path: Path,
+    pub path: P<Path>,
     // Don't hash the ref_id. It is tracked via the thing it is used to access
     #[stable_hasher(ignore)]
     pub hir_ref_id: HirId,

@@ -92,7 +92,6 @@ impl<'a> From<&'a clean::Item> for ItemType {
                 MacroKind::Bang            => ItemType::Macro,
                 MacroKind::Attr            => ItemType::ProcAttribute,
                 MacroKind::Derive          => ItemType::ProcDerive,
-                MacroKind::ProcMacroStub   => unreachable!(),
             }
             clean::StrippedItem(..)        => unreachable!(),
         }
@@ -110,7 +109,6 @@ impl From<clean::TypeKind> for ItemType {
             clean::TypeKind::Module     => ItemType::Module,
             clean::TypeKind::Static     => ItemType::Static,
             clean::TypeKind::Const      => ItemType::Constant,
-            clean::TypeKind::Variant    => ItemType::Variant,
             clean::TypeKind::Typedef    => ItemType::Typedef,
             clean::TypeKind::Foreign    => ItemType::ForeignType,
             clean::TypeKind::Macro      => ItemType::Macro,
