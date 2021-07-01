@@ -20,14 +20,14 @@ class Stage0DataTestCase(unittest.TestCase):
         os.mkdir(os.path.join(self.rust_root, "src"))
         with open(os.path.join(self.rust_root, "src",
                                "stage0.txt"), "w") as stage0:
-            stage0.write("#ignore\n\ndate: 2017-06-15\nrustc: beta\ncargo: beta")
+            stage0.write("#ignore\n\ndate: 2017-06-15\nrustc: beta\ncargo: beta\nrustfmt: beta")
 
     def tearDown(self):
         rmtree(self.rust_root)
 
     def test_stage0_data(self):
         """Extract data from stage0.txt"""
-        expected = {"date": "2017-06-15", "rustc": "beta", "cargo": "beta"}
+        expected = {"date": "2017-06-15", "rustc": "beta", "cargo": "beta", "rustfmt": "beta"}
         data = bootstrap.stage0_data(self.rust_root)
         self.assertDictEqual(data, expected)
 
@@ -70,6 +70,7 @@ class ProgramOutOfDate(unittest.TestCase):
         self.build.build_dir = self.container
         self.rustc_stamp_path = os.path.join(self.container, "stage0",
                                              ".rustc-stamp")
+        self.key = self.build.date + str(None)
 
     def tearDown(self):
         rmtree(self.container)
@@ -78,19 +79,19 @@ class ProgramOutOfDate(unittest.TestCase):
         """Return True when the stamp file does not exists"""
         if os.path.exists(self.rustc_stamp_path):
             os.unlink(self.rustc_stamp_path)
-        self.assertTrue(self.build.program_out_of_date(self.rustc_stamp_path))
+        self.assertTrue(self.build.program_out_of_date(self.rustc_stamp_path, self.key))
 
     def test_dates_are_different(self):
         """Return True when the dates are different"""
         with open(self.rustc_stamp_path, "w") as rustc_stamp:
-            rustc_stamp.write("2017-06-14")
-        self.assertTrue(self.build.program_out_of_date(self.rustc_stamp_path))
+            rustc_stamp.write("2017-06-14None")
+        self.assertTrue(self.build.program_out_of_date(self.rustc_stamp_path, self.key))
 
     def test_same_dates(self):
         """Return False both dates match"""
         with open(self.rustc_stamp_path, "w") as rustc_stamp:
-            rustc_stamp.write("2017-06-15")
-        self.assertFalse(self.build.program_out_of_date(self.rustc_stamp_path))
+            rustc_stamp.write("2017-06-15None")
+        self.assertFalse(self.build.program_out_of_date(self.rustc_stamp_path, self.key))
 
 
 if __name__ == '__main__':

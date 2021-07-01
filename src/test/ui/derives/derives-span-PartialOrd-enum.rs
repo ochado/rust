@@ -6,7 +6,7 @@ struct Error;
 #[derive(PartialOrd,PartialEq)]
 enum Enum {
    A(
-     Error //~ ERROR
+     Error //~ ERROR can't compare `Error` with `Error`
      )
 }
 

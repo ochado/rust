@@ -15,8 +15,8 @@ For example, `Box` pointers require two lang items, one for allocation
 and one for deallocation. A freestanding program that uses the `Box`
 sugar for dynamic allocations via `malloc` and `free`:
 
-```rust,ignore
-#![feature(lang_items, box_syntax, start, libc, core_intrinsics)]
+```rust,ignore (libc-is-finicky)
+#![feature(lang_items, box_syntax, start, libc, core_intrinsics, rustc_private)]
 #![no_std]
 use core::intrinsics;
 use core::panic::PanicInfo;
@@ -52,7 +52,6 @@ fn main(_argc: isize, _argv: *const *const u8) -> isize {
 
 #[lang = "eh_personality"] extern fn rust_eh_personality() {}
 #[lang = "panic_impl"] extern fn rust_begin_panic(info: &PanicInfo) -> ! { unsafe { intrinsics::abort() } }
-#[lang = "eh_unwind_resume"] extern fn rust_eh_unwind_resume() {}
 #[no_mangle] pub extern fn rust_eh_register_frames () {}
 #[no_mangle] pub extern fn rust_eh_unregister_frames () {}
 ```
@@ -67,7 +66,7 @@ Other features provided by lang items include:
   marked with lang items; those specific four are `eq`, `ord`,
   `deref`, and `add` respectively.
 - stack unwinding and general failure; the `eh_personality`,
-  `eh_unwind_resume`, `fail` and `fail_bounds_checks` lang items.
+  `panic` and `panic_bounds_check` lang items.
 - the traits in `std::marker` used to indicate types of
   various kinds; lang items `send`, `sync` and `copy`.
 - the marker types and variance indicators found in
@@ -106,8 +105,8 @@ or overriding the default shim for the C `main` function with your own.
 The function marked `#[start]` is passed the command line parameters
 in the same format as C:
 
-```rust,ignore
-#![feature(lang_items, core_intrinsics)]
+```rust,ignore (libc-is-finicky)
+#![feature(lang_items, core_intrinsics, rustc_private)]
 #![feature(start)]
 #![no_std]
 use core::intrinsics;
@@ -130,12 +129,6 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
 pub extern fn rust_eh_personality() {
 }
 
-// This function may be needed based on the compilation target.
-#[lang = "eh_unwind_resume"]
-#[no_mangle]
-pub extern fn rust_eh_unwind_resume() {
-}
-
 #[lang = "panic_impl"]
 #[no_mangle]
 pub extern fn rust_begin_panic(info: &PanicInfo) -> ! {
@@ -148,8 +141,8 @@ with `#![no_main]` and then create the appropriate symbol with the
 correct ABI and the correct name, which requires overriding the
 compiler's name mangling too:
 
-```rust,ignore
-#![feature(lang_items, core_intrinsics)]
+```rust,ignore (libc-is-finicky)
+#![feature(lang_items, core_intrinsics, rustc_private)]
 #![feature(start)]
 #![no_std]
 #![no_main]
@@ -173,12 +166,6 @@ pub extern fn main(_argc: i32, _argv: *const *const u8) -> i32 {
 pub extern fn rust_eh_personality() {
 }
 
-// This function may be needed based on the compilation target.
-#[lang = "eh_unwind_resume"]
-#[no_mangle]
-pub extern fn rust_eh_unwind_resume() {
-}
-
 #[lang = "panic_impl"]
 #[no_mangle]
 pub extern fn rust_begin_panic(info: &PanicInfo) -> ! {
@@ -188,11 +175,7 @@ pub extern fn rust_begin_panic(info: &PanicInfo) -> ! {
 
 In many cases, you may need to manually link to the `compiler_builtins` crate
 when building a `no_std` binary. You may observe this via linker error messages
-such as "```undefined reference to `__rust_probestack'```". Using this crate
-also requires enabling the library feature `compiler_builtins_lib`. You can read
-more about this [here][compiler-builtins-lib].
-
-[compiler-builtins-lib]: ../library-features/compiler-builtins-lib.md
+such as "```undefined reference to `__rust_probestack'```".
 
 ## More about the language items
 
@@ -208,17 +191,15 @@ mechanisms of the compiler. This is often mapped to GCC's personality function
 which do not trigger a panic can be assured that this function is never
 called. The language item's name is `eh_personality`.
 
-[unwind]: https://github.com/rust-lang/rust/blob/master/src/libpanic_unwind/gcc.rs
+[unwind]: https://github.com/rust-lang/rust/blob/master/library/panic_unwind/src/gcc.rs
 
 The second function, `rust_begin_panic`, is also used by the failure mechanisms of the
 compiler. When a panic happens, this controls the message that's displayed on
 the screen. While the language item's name is `panic_impl`, the symbol name is
 `rust_begin_panic`.
 
-A third function, `rust_eh_unwind_resume`, is also needed if the `custom_unwind_resume`
-flag is set in the options of the compilation target. It allows customizing the
-process of resuming unwind at the end of the landing pads. The language item's name
-is `eh_unwind_resume`.
+Finally, a `eh_catch_typeinfo` static is needed for certain targets which
+implement Rust panics on top of C++ exceptions.
 
 ## List of all language items
 
@@ -249,11 +230,9 @@ the source code.
 - Runtime
   - `start`: `libstd/rt.rs`
   - `eh_personality`: `libpanic_unwind/emcc.rs` (EMCC)
-  - `eh_personality`: `libpanic_unwind/seh64_gnu.rs` (SEH64 GNU)
+  - `eh_personality`: `libpanic_unwind/gcc.rs` (GNU)
   - `eh_personality`: `libpanic_unwind/seh.rs` (SEH)
-  - `eh_unwind_resume`: `libpanic_unwind/seh64_gnu.rs` (SEH64 GNU)
-  - `eh_unwind_resume`: `libpanic_unwind/gcc.rs` (GCC)
-  - `msvc_try_filter`: `libpanic_unwind/seh.rs` (SEH)
+  - `eh_catch_typeinfo`: `libpanic_unwind/emcc.rs` (EMCC)
   - `panic`: `libcore/panicking.rs`
   - `panic_bounds_check`: `libcore/panicking.rs`
   - `panic_impl`: `libcore/panicking.rs`
@@ -308,6 +287,7 @@ the source code.
   - `unsize`: `libcore/marker.rs`
   - `sync`: `libcore/marker.rs`
   - `phantom_data`: `libcore/marker.rs`
+  - `discriminant_kind`: `libcore/marker.rs`
   - `freeze`: `libcore/marker.rs`
   - `debug_trait`: `libcore/fmt/mod.rs`
   - `non_zero`: `libcore/nonzero.rs`

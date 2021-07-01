@@ -2,9 +2,8 @@
 
 pub struct Foo;
 
-extern {
-    pub fn foo(x: (Foo)); //~ ERROR unspecified layout
+extern "C" {
+    pub fn foo(x: (Foo)); //~ ERROR `extern` block uses type `Foo`
 }
 
-fn main() {
-}
+fn main() {}

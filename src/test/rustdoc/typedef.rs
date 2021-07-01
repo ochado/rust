@@ -9,12 +9,12 @@ impl MyStruct {
 }
 
 // @has typedef/type.MyAlias.html
-// @has - '//*[@class="impl"]//code' 'impl MyAlias'
-// @has - '//*[@class="impl"]//code' 'impl MyTrait for MyAlias'
+// @has - '//*[@class="impl has-srclink"]//code' 'impl MyAlias'
+// @has - '//*[@class="impl has-srclink"]//code' 'impl MyTrait for MyAlias'
 // @has - 'Alias docstring'
 // @has - '//*[@class="sidebar"]//p[@class="location"]' 'Type Definition MyAlias'
-// @has - '//*[@class="sidebar"]//a[@href="#methods"]' 'Methods'
-// @has - '//*[@class="sidebar"]//a[@href="#implementations"]' 'Trait Implementations'
+// @has - '//*[@class="sidebar"]//a[@href="#implementations"]' 'Methods'
+// @has - '//*[@class="sidebar"]//a[@href="#trait-implementations"]' 'Trait Implementations'
 /// Alias docstring
 pub type MyAlias = MyStruct;
 

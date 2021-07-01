@@ -1,5 +1,6 @@
-// build-pass (FIXME(62277): could be check-pass?)
-
+// check-pass
+// edition:2015
+//
 // rust-lang/rust#56327: Some occurrences of `dyn` within a macro are
 // not instances of identifiers, and thus should *not* be caught by the
 // keyword_ident lint.

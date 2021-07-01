@@ -1,8 +1,10 @@
-use errors::Applicability;
-use syntax::parse::lexer::{StringReader as Lexer};
-use syntax::parse::{ParseSess, token};
-use syntax::source_map::FilePathMapping;
-use syntax_pos::{InnerSpan, FileName};
+use rustc_data_structures::sync::{Lock, Lrc};
+use rustc_errors::{emitter::Emitter, Applicability, Diagnostic, Handler};
+use rustc_middle::lint::LintDiagnosticBuilder;
+use rustc_parse::parse_stream_from_source_str;
+use rustc_session::parse::ParseSess;
+use rustc_span::source_map::{FilePathMapping, SourceMap};
+use rustc_span::{FileName, InnerSpan};
 
 use crate::clean;
 use crate::core::DocContext;
@@ -10,13 +12,13 @@ use crate::fold::DocFolder;
 use crate::html::markdown::{self, RustCodeBlock};
 use crate::passes::Pass;
 
-pub const CHECK_CODE_BLOCK_SYNTAX: Pass = Pass {
+crate const CHECK_CODE_BLOCK_SYNTAX: Pass = Pass {
     name: "check-code-block-syntax",
-    pass: check_code_block_syntax,
+    run: check_code_block_syntax,
     description: "validates syntax inside Rust code blocks",
 };
 
-pub fn check_code_block_syntax(krate: clean::Crate, cx: &DocContext<'_>) -> clean::Crate {
+crate fn check_code_block_syntax(krate: clean::Crate, cx: &mut DocContext<'_>) -> clean::Crate {
     SyntaxChecker { cx }.fold_crate(krate)
 }
 
@@ -26,87 +28,147 @@ struct SyntaxChecker<'a, 'tcx> {
 
 impl<'a, 'tcx> SyntaxChecker<'a, 'tcx> {
     fn check_rust_syntax(&self, item: &clean::Item, dox: &str, code_block: RustCodeBlock) {
-        let sess = ParseSess::new(FilePathMapping::empty());
-        let source_file = sess.source_map().new_source_file(
-            FileName::Custom(String::from("doctest")),
-            dox[code_block.code].to_owned(),
-        );
+        let buffer = Lrc::new(Lock::new(Buffer::default()));
+        let emitter = BufferEmitter { buffer: Lrc::clone(&buffer) };
 
-        let errors = {
-            let mut lexer = Lexer::new(&sess, source_file, None);
-            while let Ok(token::Token { kind, .. }) = lexer.try_next_token() {
-                if kind == token::Eof {
-                    break;
-                }
-            }
+        let sm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
+        let handler = Handler::with_emitter(false, None, Box::new(emitter));
+        let source = dox[code_block.code].to_owned();
+        let sess = ParseSess::with_span_handler(handler, sm);
 
-            let errors = lexer.buffer_fatal_errors();
+        let is_empty = rustc_driver::catch_fatal_errors(|| {
+            parse_stream_from_source_str(
+                FileName::Custom(String::from("doctest")),
+                source,
+                &sess,
+                None,
+            )
+            .is_empty()
+        })
+        .unwrap_or(false);
+        let buffer = buffer.borrow();
 
-            if !errors.is_empty() {
-                Err(errors)
-            } else {
-                Ok(())
-            }
+        if !buffer.has_errors && !is_empty {
+            // No errors in a non-empty program.
+            return;
+        }
+
+        let local_id = match item.def_id.as_real().and_then(|x| x.as_local()) {
+            Some(id) => id,
+            // We don't need to check the syntax for other crates so returning
+            // without doing anything should not be a problem.
+            None => return,
         };
 
-        if let Err(errors) = errors {
-            let mut diag = if let Some(sp) =
-                super::source_span_for_markdown_range(self.cx, &dox, &code_block.range, &item.attrs)
-            {
-                let mut diag = self
-                    .cx
-                    .sess()
-                    .struct_span_warn(sp, "could not parse code block as Rust code");
+        let hir_id = self.cx.tcx.hir().local_def_id_to_hir_id(local_id);
+        let empty_block = code_block.syntax.is_none() && code_block.is_fenced;
+        let is_ignore = code_block.is_ignore;
 
-                for mut err in errors {
-                    diag.note(&format!("error from rustc: {}", err.message()));
-                    err.cancel();
-                }
+        // The span and whether it is precise or not.
+        let (sp, precise_span) = match super::source_span_for_markdown_range(
+            self.cx.tcx,
+            &dox,
+            &code_block.range,
+            &item.attrs,
+        ) {
+            Some(sp) => (sp, true),
+            None => (item.attr_span(self.cx.tcx), false),
+        };
 
-                if code_block.syntax.is_none() && code_block.is_fenced {
-                    let sp = sp.from_inner(InnerSpan::new(0, 3));
+        // lambda that will use the lint to start a new diagnostic and add
+        // a suggestion to it when needed.
+        let diag_builder = |lint: LintDiagnosticBuilder<'_>| {
+            let explanation = if is_ignore {
+                "`ignore` code blocks require valid Rust code for syntax highlighting; \
+                    mark blocks that do not contain Rust code as text"
+            } else {
+                "mark blocks that do not contain Rust code as text"
+            };
+            let msg = if buffer.has_errors {
+                "could not parse code block as Rust code"
+            } else {
+                "Rust code block is empty"
+            };
+            let mut diag = lint.build(msg);
+
+            if precise_span {
+                if is_ignore {
+                    // giving an accurate suggestion is hard because `ignore` might not have come first in the list.
+                    // just give a `help` instead.
+                    diag.span_help(
+                        sp.from_inner(InnerSpan::new(0, 3)),
+                        &format!("{}: ```text", explanation),
+                    );
+                } else if empty_block {
                     diag.span_suggestion(
-                        sp,
-                        "mark blocks that do not contain Rust code as text",
+                        sp.from_inner(InnerSpan::new(0, 3)),
+                        explanation,
                         String::from("```text"),
                         Applicability::MachineApplicable,
                     );
                 }
+            } else if empty_block || is_ignore {
+                diag.help(&format!("{}: ```text", explanation));
+            }
 
-                diag
-            } else {
-                // We couldn't calculate the span of the markdown block that had the error, so our
-                // diagnostics are going to be a bit lacking.
-                let mut diag = self.cx.sess().struct_span_warn(
-                    super::span_of_attrs(&item.attrs),
-                    "doc comment contains an invalid Rust code block",
-                );
-
-                for mut err in errors {
-                    // Don't bother reporting the error, because we can't show where it happened.
-                    err.cancel();
-                }
-
-                if code_block.syntax.is_none() && code_block.is_fenced {
-                    diag.help("mark blocks that do not contain Rust code as text: ```text");
-                }
-
-                diag
-            };
+            // FIXME(#67563): Provide more context for these errors by displaying the spans inline.
+            for message in buffer.messages.iter() {
+                diag.note(&message);
+            }
 
             diag.emit();
-        }
+        };
+
+        // Finally build and emit the completed diagnostic.
+        // All points of divergence have been handled earlier so this can be
+        // done the same way whether the span is precise or not.
+        self.cx.tcx.struct_span_lint_hir(
+            crate::lint::INVALID_RUST_CODEBLOCKS,
+            hir_id,
+            sp,
+            diag_builder,
+        );
     }
 }
 
 impl<'a, 'tcx> DocFolder for SyntaxChecker<'a, 'tcx> {
     fn fold_item(&mut self, item: clean::Item) -> Option<clean::Item> {
         if let Some(dox) = &item.attrs.collapsed_doc_value() {
-            for code_block in markdown::rust_code_blocks(&dox) {
+            let sp = item.attr_span(self.cx.tcx);
+            let extra = crate::html::markdown::ExtraInfo::new_did(
+                self.cx.tcx,
+                item.def_id.expect_real(),
+                sp,
+            );
+            for code_block in markdown::rust_code_blocks(&dox, &extra) {
                 self.check_rust_syntax(&item, &dox, code_block);
             }
         }
 
-        self.fold_item_recur(item)
+        Some(self.fold_item_recur(item))
+    }
+}
+
+#[derive(Default)]
+struct Buffer {
+    messages: Vec<String>,
+    has_errors: bool,
+}
+
+struct BufferEmitter {
+    buffer: Lrc<Lock<Buffer>>,
+}
+
+impl Emitter for BufferEmitter {
+    fn emit_diagnostic(&mut self, diag: &Diagnostic) {
+        let mut buffer = self.buffer.borrow_mut();
+        buffer.messages.push(format!("error from rustc: {}", diag.message[0].0));
+        if diag.is_error() {
+            buffer.has_errors = true;
+        }
+    }
+
+    fn source_map(&self) -> Option<&Lrc<SourceMap>> {
+        None
     }
 }

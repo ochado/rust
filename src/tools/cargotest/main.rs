@@ -1,9 +1,7 @@
-#![deny(rust_2018_idioms)]
-
 use std::env;
-use std::process::Command;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 struct Test {
     repo: &'static str,
@@ -11,70 +9,85 @@ struct Test {
     sha: &'static str,
     lock: Option<&'static str>,
     packages: &'static [&'static str],
+    features: Option<&'static [&'static str]>,
+    manifest_path: Option<&'static str>,
 }
 
-const TEST_REPOS: &'static [Test] = &[
+const TEST_REPOS: &[Test] = &[
     Test {
         name: "iron",
         repo: "https://github.com/iron/iron",
-        sha: "21c7dae29c3c214c08533c2a55ac649b418f2fe3",
-        lock: Some(include_str!("lockfiles/iron-Cargo.lock")),
+        sha: "cf056ea5e8052c1feea6141e40ab0306715a2c33",
+        lock: None,
         packages: &[],
+        features: None,
+        manifest_path: None,
     },
     Test {
         name: "ripgrep",
         repo: "https://github.com/BurntSushi/ripgrep",
-        sha: "ad9befbc1d3b5c695e7f6b6734ee1b8e683edd41",
+        sha: "3de31f752729525d85a3d1575ac1978733b3f7e7",
         lock: None,
         packages: &[],
+        features: None,
+        manifest_path: None,
     },
     Test {
         name: "tokei",
         repo: "https://github.com/XAMPPRocky/tokei",
-        sha: "5e11c4852fe4aa086b0e4fe5885822fbe57ba928",
+        sha: "fdf3f8cb279a7aeac0696c87e5d8b0cd946e4f9e",
         lock: None,
         packages: &[],
-    },
-    Test {
-        name: "treeify",
-        repo: "https://github.com/dzamlo/treeify",
-        sha: "999001b223152441198f117a68fb81f57bc086dd",
-        lock: None,
-        packages: &[],
+        features: None,
+        manifest_path: None,
     },
     Test {
         name: "xsv",
         repo: "https://github.com/BurntSushi/xsv",
-        sha: "66956b6bfd62d6ac767a6b6499c982eae20a2c9f",
+        sha: "3de6c04269a7d315f7e9864b9013451cd9580a08",
         lock: None,
         packages: &[],
+        features: None,
+        manifest_path: None,
     },
     Test {
         name: "servo",
         repo: "https://github.com/servo/servo",
-        sha: "987e376ca7a4245dbc3e0c06e963278ee1ac92d1",
+        sha: "caac107ae8145ef2fd20365e2b8fadaf09c2eb3b",
         lock: None,
         // Only test Stylo a.k.a. Quantum CSS, the parts of Servo going into Firefox.
         // This takes much less time to build than all of Servo and supports stable Rust.
         packages: &["selectors"],
+        features: None,
+        manifest_path: None,
     },
     Test {
-        name: "webrender",
-        repo: "https://github.com/servo/webrender",
-        sha: "cdadd068f4c7218bd983d856981d561e605270ab",
+        name: "diesel",
+        repo: "https://github.com/diesel-rs/diesel",
+        sha: "91493fe47175076f330ce5fc518f0196c0476f56",
         lock: None,
         packages: &[],
+        // Test the embeded sqlite variant of diesel
+        // This does not require any dependency to be present,
+        // sqlite will be compiled as part of the build process
+        features: Some(&["sqlite", "libsqlite3-sys/bundled"]),
+        // We are only interested in testing diesel itself
+        // not any other crate present in the diesel workspace
+        // (This is required to set the feature flags above)
+        manifest_path: Some("diesel/Cargo.toml"),
     },
 ];
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
-    let ref cargo = args[1];
+    let cargo = &args[1];
     let out_dir = Path::new(&args[2]);
-    let ref cargo = Path::new(cargo);
+    let cargo = &Path::new(cargo);
 
     for test in TEST_REPOS.iter().rev() {
-        test_repo(cargo, out_dir, test);
+        if args[3..].is_empty() || args[3..].iter().any(|s| s.contains(test.name)) {
+            test_repo(cargo, out_dir, test);
+        }
     }
 }
 
@@ -84,7 +97,7 @@ fn test_repo(cargo: &Path, out_dir: &Path, test: &Test) {
     if let Some(lockfile) = test.lock {
         fs::write(&dir.join("Cargo.lock"), lockfile).unwrap();
     }
-    if !run_cargo_test(cargo, &dir, test.packages) {
+    if !run_cargo_test(cargo, &dir, test.packages, test.features, test.manifest_path) {
         panic!("tests failed for {}", test.repo);
     }
 }
@@ -93,11 +106,7 @@ fn clone_repo(test: &Test, out_dir: &Path) -> PathBuf {
     let out_dir = out_dir.join(test.name);
 
     if !out_dir.join(".git").is_dir() {
-        let status = Command::new("git")
-                         .arg("init")
-                         .arg(&out_dir)
-                         .status()
-                         .expect("");
+        let status = Command::new("git").arg("init").arg(&out_dir).status().unwrap();
         assert!(status.success());
     }
 
@@ -106,23 +115,23 @@ fn clone_repo(test: &Test, out_dir: &Path) -> PathBuf {
     for depth in &[0, 1, 10, 100, 1000, 100000] {
         if *depth > 0 {
             let status = Command::new("git")
-                             .arg("fetch")
-                             .arg(test.repo)
-                             .arg("master")
-                             .arg(&format!("--depth={}", depth))
-                             .current_dir(&out_dir)
-                             .status()
-                             .expect("");
+                .arg("fetch")
+                .arg(test.repo)
+                .arg("master")
+                .arg(&format!("--depth={}", depth))
+                .current_dir(&out_dir)
+                .status()
+                .unwrap();
             assert!(status.success());
         }
 
         let status = Command::new("git")
-                         .arg("reset")
-                         .arg(test.sha)
-                         .arg("--hard")
-                         .current_dir(&out_dir)
-                         .status()
-                         .expect("");
+            .arg("reset")
+            .arg(test.sha)
+            .arg("--hard")
+            .current_dir(&out_dir)
+            .status()
+            .unwrap();
 
         if status.success() {
             found = true;
@@ -133,23 +142,38 @@ fn clone_repo(test: &Test, out_dir: &Path) -> PathBuf {
     if !found {
         panic!("unable to find commit {}", test.sha)
     }
-    let status = Command::new("git")
-                     .arg("clean")
-                     .arg("-fdx")
-                     .current_dir(&out_dir)
-                     .status()
-                     .unwrap();
+    let status =
+        Command::new("git").arg("clean").arg("-fdx").current_dir(&out_dir).status().unwrap();
     assert!(status.success());
 
     out_dir
 }
 
-fn run_cargo_test(cargo_path: &Path, crate_path: &Path, packages: &[&str]) -> bool {
+fn run_cargo_test(
+    cargo_path: &Path,
+    crate_path: &Path,
+    packages: &[&str],
+    features: Option<&[&str]>,
+    manifest_path: Option<&str>,
+) -> bool {
     let mut command = Command::new(cargo_path);
     command.arg("test");
+
+    if let Some(path) = manifest_path {
+        command.arg(format!("--manifest-path={}", path));
+    }
+
+    if let Some(features) = features {
+        command.arg("--no-default-features");
+        for feature in features {
+            command.arg(format!("--features={}", feature));
+        }
+    }
+
     for name in packages {
         command.arg("-p").arg(name);
     }
+
     let status = command
         // Disable rust-lang/cargo's cross-compile tests
         .env("CFG_DISABLE_CROSS_TESTS", "1")
@@ -157,7 +181,7 @@ fn run_cargo_test(cargo_path: &Path, crate_path: &Path, packages: &[&str]) -> bo
         .env("RUSTFLAGS", "--cap-lints warn")
         .current_dir(crate_path)
         .status()
-        .expect("");
+        .unwrap();
 
     status.success()
 }

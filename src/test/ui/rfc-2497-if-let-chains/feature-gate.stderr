@@ -1,5 +1,5 @@
 error: no rules expected the token `let`
-  --> $DIR/feature-gate.rs:131:15
+  --> $DIR/feature-gate.rs:133:15
    |
 LL |     macro_rules! use_expr {
    |     --------------------- when calling this macro
@@ -13,8 +13,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if (let 0 = 1) {}
    |         ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:18:11
@@ -22,8 +23,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if (((let 0 = 1))) {}
    |           ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:22:16
@@ -31,8 +33,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if true && let 0 = 1 {}
    |                ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:26:8
@@ -40,8 +43,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if let 0 = 1 && true {}
    |        ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:30:9
@@ -49,8 +53,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if (let 0 = 1) && true {}
    |         ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:34:17
@@ -58,8 +63,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if true && (let 0 = 1) {}
    |                 ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:38:9
@@ -67,8 +73,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if (let 0 = 1) && (let 0 = 1) {}
    |         ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:38:24
@@ -76,8 +83,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if (let 0 = 1) && (let 0 = 1) {}
    |                        ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:44:8
@@ -85,8 +93,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |        ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:44:21
@@ -94,8 +103,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                     ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:44:35
@@ -103,8 +113,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                   ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:44:48
@@ -112,8 +123,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:44:61
@@ -121,8 +133,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                             ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:56:8
@@ -130,8 +143,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     if let Range { start: _, end: _ } = (true..true) && false {}
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:64:12
@@ -139,8 +153,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while (let 0 = 1) {}
    |            ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:68:14
@@ -148,8 +163,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while (((let 0 = 1))) {}
    |              ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:72:19
@@ -157,8 +173,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while true && let 0 = 1 {}
    |                   ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:76:11
@@ -166,8 +183,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while let 0 = 1 && true {}
    |           ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:80:12
@@ -175,8 +193,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while (let 0 = 1) && true {}
    |            ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:84:20
@@ -184,8 +203,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while true && (let 0 = 1) {}
    |                    ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:88:12
@@ -193,8 +213,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while (let 0 = 1) && (let 0 = 1) {}
    |            ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:88:27
@@ -202,8 +223,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while (let 0 = 1) && (let 0 = 1) {}
    |                           ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:94:11
@@ -211,8 +233,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |           ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:94:24
@@ -220,8 +243,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                        ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:94:38
@@ -229,8 +253,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                      ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:94:51
@@ -238,8 +263,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                   ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:94:64
@@ -247,8 +273,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                                ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:106:11
@@ -256,17 +283,19 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     while let Range { start: _, end: _ } = (true..true) && false {}
    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
-  --> $DIR/feature-gate.rs:129:20
+  --> $DIR/feature-gate.rs:131:20
    |
 LL |     #[cfg(FALSE)] (let 0 = 1);
    |                    ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:114:17
@@ -274,8 +303,9 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     noop_expr!((let 0 = 1));
    |                 ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
   --> $DIR/feature-gate.rs:123:16
@@ -283,35 +313,41 @@ error[E0658]: `let` expressions in this position are experimental
 LL |     use_expr!((let 0 = 1 && 0 == 0));
    |                ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
 error[E0658]: `let` expressions in this position are experimental
-  --> $DIR/feature-gate.rs:126:16
+  --> $DIR/feature-gate.rs:127:16
    |
 LL |     use_expr!((let 0 = 1));
    |                ^^^^^^^^^
    |
-   = note: for more information, see https://github.com/rust-lang/rust/issues/53667
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = help: you can write `matches!(<expr>, <pattern>)` instead of `let <pattern> = <expr>`
 
-error: `let` expressions are not supported here
-  --> $DIR/feature-gate.rs:14:9
+error: invalid parentheses around `let` expression in `if let`
+  --> $DIR/feature-gate.rs:14:8
    |
 LL |     if (let 0 = 1) {}
-   |         ^^^^^^^^^
+   |        ^         ^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+help: `if let` needs to be written without parentheses
+   |
+LL |     if let 0 = 1 {}
+   |       --       --
 
-error: `let` expressions are not supported here
-  --> $DIR/feature-gate.rs:18:11
+error: invalid parentheses around `let` expression in `if let`
+  --> $DIR/feature-gate.rs:18:8
    |
 LL |     if (((let 0 = 1))) {}
-   |           ^^^^^^^^^
+   |        ^^^         ^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+help: `if let` needs to be written without parentheses
+   |
+LL |     if let 0 = 1 {}
+   |       --       --
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:22:16
@@ -319,8 +355,7 @@ error: `let` expressions are not supported here
 LL |     if true && let 0 = 1 {}
    |                ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:26:8
@@ -328,8 +363,7 @@ error: `let` expressions are not supported here
 LL |     if let 0 = 1 && true {}
    |        ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:30:9
@@ -337,8 +371,7 @@ error: `let` expressions are not supported here
 LL |     if (let 0 = 1) && true {}
    |         ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:34:17
@@ -346,8 +379,7 @@ error: `let` expressions are not supported here
 LL |     if true && (let 0 = 1) {}
    |                 ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:38:9
@@ -355,8 +387,7 @@ error: `let` expressions are not supported here
 LL |     if (let 0 = 1) && (let 0 = 1) {}
    |         ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:38:24
@@ -364,8 +395,7 @@ error: `let` expressions are not supported here
 LL |     if (let 0 = 1) && (let 0 = 1) {}
    |                        ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:44:8
@@ -373,8 +403,7 @@ error: `let` expressions are not supported here
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |        ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:44:21
@@ -382,8 +411,7 @@ error: `let` expressions are not supported here
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                     ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:44:35
@@ -391,8 +419,7 @@ error: `let` expressions are not supported here
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                   ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:44:48
@@ -400,8 +427,7 @@ error: `let` expressions are not supported here
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:44:61
@@ -409,8 +435,7 @@ error: `let` expressions are not supported here
 LL |     if let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                             ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:56:8
@@ -418,8 +443,7 @@ error: `let` expressions are not supported here
 LL |     if let Range { start: _, end: _ } = (true..true) && false {}
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:64:12
@@ -427,8 +451,7 @@ error: `let` expressions are not supported here
 LL |     while (let 0 = 1) {}
    |            ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:68:14
@@ -436,8 +459,7 @@ error: `let` expressions are not supported here
 LL |     while (((let 0 = 1))) {}
    |              ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:72:19
@@ -445,8 +467,7 @@ error: `let` expressions are not supported here
 LL |     while true && let 0 = 1 {}
    |                   ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:76:11
@@ -454,8 +475,7 @@ error: `let` expressions are not supported here
 LL |     while let 0 = 1 && true {}
    |           ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:80:12
@@ -463,8 +483,7 @@ error: `let` expressions are not supported here
 LL |     while (let 0 = 1) && true {}
    |            ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:84:20
@@ -472,8 +491,7 @@ error: `let` expressions are not supported here
 LL |     while true && (let 0 = 1) {}
    |                    ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:88:12
@@ -481,8 +499,7 @@ error: `let` expressions are not supported here
 LL |     while (let 0 = 1) && (let 0 = 1) {}
    |            ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:88:27
@@ -490,8 +507,7 @@ error: `let` expressions are not supported here
 LL |     while (let 0 = 1) && (let 0 = 1) {}
    |                           ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:94:11
@@ -499,8 +515,7 @@ error: `let` expressions are not supported here
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |           ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:94:24
@@ -508,8 +523,7 @@ error: `let` expressions are not supported here
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                        ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:94:38
@@ -517,8 +531,7 @@ error: `let` expressions are not supported here
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                      ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:94:51
@@ -526,8 +539,7 @@ error: `let` expressions are not supported here
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                   ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:94:64
@@ -535,8 +547,7 @@ error: `let` expressions are not supported here
 LL |     while let 0 = 1 && let 1 = 2 && (let 2 = 3 && let 3 = 4 && let 4 = 5) {}
    |                                                                ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:106:11
@@ -544,8 +555,7 @@ error: `let` expressions are not supported here
 LL |     while let Range { start: _, end: _ } = (true..true) && false {}
    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
   --> $DIR/feature-gate.rs:123:16
@@ -553,18 +563,35 @@ error: `let` expressions are not supported here
 LL |     use_expr!((let 0 = 1 && 0 == 0));
    |                ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
 error: `let` expressions are not supported here
-  --> $DIR/feature-gate.rs:126:16
+  --> $DIR/feature-gate.rs:123:16
+   |
+LL |     use_expr!((let 0 = 1 && 0 == 0));
+   |                ^^^^^^^^^
+   |
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
+
+error: invalid parentheses around `let` expression in `if let`
+  --> $DIR/feature-gate.rs:127:15
+   |
+LL |     use_expr!((let 0 = 1));
+   |               ^         ^
+   |
+help: `if let` needs to be written without parentheses
+   |
+LL |     use_expr!(let 0 = 1);
+   |              --       --
+
+error: `let` expressions are not supported here
+  --> $DIR/feature-gate.rs:127:16
    |
 LL |     use_expr!((let 0 = 1));
    |                ^^^^^^^^^
    |
-   = note: only supported directly in conditions of `if`- and `while`-expressions
-   = note: as well as when nested within `&&` and parenthesis in those conditions
+   = note: only supported directly without parentheses in conditions of `if`- and `while`-expressions, as well as in `let` chains within parentheses
 
-error: aborting due to 63 previous errors
+error: aborting due to 65 previous errors
 
 For more information about this error, try `rustc --explain E0658`.

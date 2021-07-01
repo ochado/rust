@@ -26,7 +26,7 @@ h2 {
 }
 </style>
 
-Welcome to an overview of the documentation provided by the Rust project.
+Welcome to an overview of the documentation provided by the [Rust project].
 All of these projects are managed by the Docs Team; there are other
 unofficial documentation resources as well!
 
@@ -120,7 +120,7 @@ Rust. It's also sometimes called "the 'nomicon."
 
 ## The `rustc` Contribution Guide
 
-[The `rustc` Guide](https://rust-lang.github.io/rustc-guide/) documents how
+[The `rustc` Guide](https://rustc-dev-guide.rust-lang.org/) documents how
 the compiler works and how to contribute to it. This is useful if you want to build
 or modify the Rust compiler from source (e.g. to target something non-standard).
 
@@ -139,3 +139,4 @@ When developing for Bare Metal or Embedded Linux systems, you may find these res
 [The Embedded Rust Book] is targeted at developers familiar with embedded development and familiar with Rust, but have not used Rust for embedded development.
 
 [The Embedded Rust Book]: embedded-book/index.html
+[Rust project]: https://www.rust-lang.org

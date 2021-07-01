@@ -1,7 +1,7 @@
 // Test that adding an impl to a trait `Foo` DOES affect functions
 // that only use `Bar` if they have methods in common.
 
-// compile-flags: -Z query-dep-graph
+// compile-flags: -Z query-dep-graph -C incremental=tmp/dep-graph-trait-impl-two-traits-same-method
 
 #![feature(rustc_attrs)]
 #![allow(dead_code)]
@@ -29,7 +29,7 @@ mod x {
 mod y {
     use {Foo, Bar};
 
-    #[rustc_then_this_would_need(typeck_tables_of)] //~ ERROR OK
+    #[rustc_then_this_would_need(typeck)] //~ ERROR OK
     pub fn with_char() {
         char::method('a');
     }
@@ -38,7 +38,7 @@ mod y {
 mod z {
     use y;
 
-    #[rustc_then_this_would_need(typeck_tables_of)] //~ ERROR no path
+    #[rustc_then_this_would_need(typeck)] //~ ERROR no path
     pub fn z() {
         y::with_char();
     }

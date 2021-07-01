@@ -1,6 +1,9 @@
+// build-pass
+// ignore-pass (test emits codegen-time warnings and verifies that they are not errors)
+
+#![warn(const_err, unconditional_panic)]
+
 fn main() {
-    &{[1, 2, 3][4]};
-    //~^ ERROR index out of bounds
-    //~| ERROR reaching this expression at runtime will panic or abort
-    //~| ERROR this expression will panic at runtime
+    &{ [1, 2, 3][4] };
+    //~^ WARN operation will panic
 }

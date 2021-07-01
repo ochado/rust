@@ -19,11 +19,11 @@ impl<T: Clone, F> Iterator for Iterate<T, F> where F: Fn(&T) -> T {
         Some(self.state.clone())
     }
     #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) { (std::usize::MAX, None) }
+    fn size_hint(&self) -> (usize, Option<usize>) { (usize::MAX, None) }
 }
 
 fn main() {
     let a = iterate(0, |x| x+1);
     println!("{:?}", a.iter().take(10).collect::<Vec<usize>>());
-    //~^ ERROR no method named `iter` found for type `Iterate<{integer}
+    //~^ ERROR no method named `iter` found
 }

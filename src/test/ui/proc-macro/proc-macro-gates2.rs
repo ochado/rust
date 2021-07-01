@@ -10,11 +10,11 @@ extern crate test_macros;
 // should either require a feature gate or not be allowed on stable.
 
 fn _test6<#[empty_attr] T>() {}
-//~^ ERROR: unknown to the compiler
+//~^ ERROR: expected non-macro attribute, found attribute macro
 
 fn _test7() {
     match 1 {
-        #[empty_attr] //~ ERROR: unknown to the compiler
+        #[empty_attr] //~ ERROR: expected non-macro attribute, found attribute macro
         0 => {}
         _ => {}
     }

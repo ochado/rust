@@ -1,4 +1,3 @@
-// ignore-tidy-linelength
 // ignore-test // Test temporarily ignored due to debuginfo tests being disabled, see PR 47155
 // min-lldb-version: 310
 
@@ -242,12 +241,12 @@ fn non_immediate_args(a: BigStruct, b: BigStruct) {
 
 fn binding(a: i64, b: u64, c: f64) {
     let x = 0; // #break
-    println!("")
+    println!()
 }
 
 fn assignment(mut a: u64, b: u64, c: f64) {
     a = b; // #break
-    println!("")
+    println!()
 }
 
 fn function_call(x: u64, y: u64, z: f64) {

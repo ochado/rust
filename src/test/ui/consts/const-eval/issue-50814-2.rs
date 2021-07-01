@@ -1,3 +1,5 @@
+// build-fail
+
 trait C {
     const BOO: usize;
 }
@@ -10,6 +12,7 @@ struct A<T>(T);
 
 impl<T: C> Foo<T> for A<T> {
     const BAR: usize = [5, 6, 7][T::BOO]; //~ ERROR any use of this value will cause an error
+    //~| WARN this was previously accepted by the compiler but is being phased out
 }
 
 fn foo<T: C>() -> &'static usize {

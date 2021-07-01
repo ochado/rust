@@ -1,7 +1,8 @@
 // compile-flags:-Z unstable-options --show-coverage
-// build-pass (FIXME(62277): could be check-pass?)
+// check-pass
 
 #![feature(trait_alias)]
+#![feature(min_type_alias_impl_trait)]
 
 /// look at this trait right here
 pub trait ThisTrait {
@@ -16,6 +17,7 @@ pub trait ThisTrait {
 }
 
 /// so what happens if we take some struct...
+#[derive(Clone)]
 pub struct SomeStruct;
 
 /// ...and slap this trait on it?
@@ -29,9 +31,8 @@ impl ThisTrait for SomeStruct {
 /// but what about those aliases? i hear they're pretty exotic
 pub trait MyAlias = ThisTrait + Send + Sync;
 
-// FIXME(58624): once rustdoc can process existential types, we need to make sure they're counted
-// /// woah, getting all existential in here
-// pub existential type ThisExists: ThisTrait;
-//
-// /// why don't we get a little more concrete
-// pub fn defines() -> ThisExists { SomeStruct {} }
+/// woah, getting all opaque in here
+pub type ThisExists = impl ThisTrait;
+
+/// why don't we get a little more concrete
+pub fn defines() -> ThisExists { SomeStruct {} }

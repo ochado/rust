@@ -3,6 +3,7 @@
 
 // revisions:rpass1 rpass2
 
+// ignore-asmjs wasm2js does not support source maps yet
 // compile-flags: -g -Z query-dep-graph
 
 #![feature(rustc_attrs)]
@@ -11,6 +12,5 @@
 pub fn main() {}
 
 #[cfg(rpass2)]
-#[rustc_dirty(label="Hir", cfg="rpass2")]
-#[rustc_dirty(label="HirBody", cfg="rpass2")]
+#[rustc_clean(except="hir_owner,hir_owner_nodes,optimized_mir", cfg="rpass2")]
 pub fn main() {}

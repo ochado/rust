@@ -1,4 +1,4 @@
-#![feature(specialization)]
+#![feature(specialization)] //~ WARN the feature `specialization` is incomplete
 
 // Regression test for a specialization-related ICE (#39448).
 
@@ -18,7 +18,7 @@ impl FromA<u8> for u16 {
 }
 
 trait FromA<T> {
-    fn from(T) -> Self;
+    fn from(t: T) -> Self;
 }
 
 impl<T: A, U: A + FromA<T>> FromA<T> for U {

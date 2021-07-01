@@ -1,7 +1,7 @@
 // Test that adding an impl to a trait `Foo` does not affect functions
 // that only use `Bar`, so long as they do not have methods in common.
 
-// compile-flags: -Z query-dep-graph
+// compile-flags: -Z query-dep-graph -C incremental=tmp/dep-graph-trait-impl-two-traits
 
 #![feature(rustc_attrs)]
 #![allow(warnings)]
@@ -28,7 +28,7 @@ mod x {
 mod y {
     use {Foo, Bar};
 
-    #[rustc_then_this_would_need(typeck_tables_of)] //~ ERROR no path
+    #[rustc_then_this_would_need(typeck)] //~ ERROR no path
     pub fn call_bar() {
         char::bar('a');
     }
@@ -37,7 +37,7 @@ mod y {
 mod z {
     use y;
 
-    #[rustc_then_this_would_need(typeck_tables_of)] //~ ERROR no path
+    #[rustc_then_this_would_need(typeck)] //~ ERROR no path
     pub fn z() {
         y::call_bar();
     }

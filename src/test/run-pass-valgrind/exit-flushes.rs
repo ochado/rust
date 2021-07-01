@@ -1,5 +1,3 @@
-// no-prefer-dynamic
-// ignore-cloudabi
 // ignore-emscripten
 // ignore-sgx no processes
 // ignore-macos this needs valgrind 3.11 or higher; see

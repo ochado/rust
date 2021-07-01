@@ -1,6 +1,6 @@
 // Test that changing what a `type` points to does not go unnoticed.
 
-// compile-flags: -Z query-dep-graph
+// compile-flags: -Z query-dep-graph -C incremental=tmp/dep-graph-type-alias
 
 #![feature(rustc_attrs)]
 #![allow(dead_code)]
@@ -41,7 +41,7 @@ struct SomeType;
 #[rustc_then_this_would_need(type_of)] //~ ERROR no path
 impl SomeType {
     #[rustc_then_this_would_need(fn_sig)] //~ ERROR OK
-    #[rustc_then_this_would_need(typeck_tables_of)] //~ ERROR OK
+    #[rustc_then_this_would_need(typeck)] //~ ERROR OK
     fn method(&self, _: TypeAlias) {}
 }
 
@@ -49,7 +49,7 @@ impl SomeType {
 type TypeAlias2 = TypeAlias;
 
 #[rustc_then_this_would_need(fn_sig)] //~ ERROR OK
-#[rustc_then_this_would_need(typeck_tables_of)] //~ ERROR OK
+#[rustc_then_this_would_need(typeck)] //~ ERROR OK
 fn function(_: TypeAlias) {
 
 }

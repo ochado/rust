@@ -1,7 +1,5 @@
 #![allow(unused)]
-#![feature(nll)]
 
-// ignore-tidy-linelength
 
 // This tests the error messages for borrows of union fields when the unions are embedded in other
 // structs or unions.

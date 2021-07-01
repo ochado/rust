@@ -5,10 +5,13 @@ LL |     fn foo(x: u16);
    |               --- type in trait
 ...
 LL |     fn foo(x: i16) { }
-   |               ^^^ expected u16, found i16
+   |               ^^^
+   |               |
+   |               expected `u16`, found `i16`
+   |               help: change the parameter type to match the trait: `u16`
    |
-   = note: expected type `fn(u16)`
-              found type `fn(i16)`
+   = note: expected fn pointer `fn(u16)`
+              found fn pointer `fn(i16)`
 
 error[E0053]: method `bar` has an incompatible type for trait
   --> $DIR/E0053.rs:11:12
@@ -17,14 +20,13 @@ LL |     fn bar(&self);
    |            ----- type in trait
 ...
 LL |     fn bar(&mut self) { }
-   |            ^^^^^^^^^ types differ in mutability
+   |            ^^^^^^^^^
+   |            |
+   |            types differ in mutability
+   |            help: change the self-receiver type to match the trait: `self: &Bar`
    |
-   = note: expected type `fn(&Bar)`
-              found type `fn(&mut Bar)`
-help: consider change the type to match the mutability in trait
-   |
-LL |     fn bar(&self) { }
-   |            ^^^^^
+   = note: expected fn pointer `fn(&Bar)`
+              found fn pointer `fn(&mut Bar)`
 
 error: aborting due to 2 previous errors
 

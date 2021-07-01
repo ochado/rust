@@ -1,6 +1,4 @@
-// ignore-tidy-linelength
-
-extern {
+extern "C" {
     fn printf(c: *const i8, ...);
 }
 
@@ -22,7 +20,7 @@ fn main() {
         //~^ ERROR can't pass `u16` to variadic function
         //~| HELP cast the value to `c_uint`
         printf(::std::ptr::null(), printf);
-        //~^ ERROR can't pass `for<'r> unsafe extern "C" fn(*const i8, std::ffi::VaListImpl<'r>, ...) {printf}` to variadic function
-        //~| HELP cast the value to `for<'r> unsafe extern "C" fn(*const i8, std::ffi::VaListImpl<'r>, ...)`
+        //~^ ERROR can't pass `unsafe extern "C" fn(*const i8, ...) {printf}` to variadic function
+        //~| HELP cast the value to `unsafe extern "C" fn(*const i8, ...)`
     }
 }

@@ -6,9 +6,9 @@
 #![feature(optimize_attribute)]
 #![crate_type="rlib"]
 
-// CHECK-LABEL: define i32 @nothing
+// CHECK-LABEL: define{{.*}}i32 @nothing
 // CHECK-SAME: [[NOTHING_ATTRS:#[0-9]+]]
-// NO-OPT: ret i32 %1
+// NO-OPT: ret i32 4
 // SIZE-OPT: ret i32 4
 // SPEEC-OPT: ret i32 4
 #[no_mangle]
@@ -16,9 +16,9 @@ pub fn nothing() -> i32 {
     2 + 2
 }
 
-// CHECK-LABEL: define i32 @size
+// CHECK-LABEL: define{{.*}}i32 @size
 // CHECK-SAME: [[SIZE_ATTRS:#[0-9]+]]
-// NO-OPT: ret i32 %1
+// NO-OPT: ret i32 6
 // SIZE-OPT: ret i32 6
 // SPEED-OPT: ret i32 6
 #[optimize(size)]
@@ -27,11 +27,11 @@ pub fn size() -> i32 {
     3 + 3
 }
 
-// CHECK-LABEL: define i32 @speed
+// CHECK-LABEL: define{{.*}}i32 @speed
 // NO-OPT-SAME: [[NOTHING_ATTRS]]
 // SPEED-OPT-SAME: [[NOTHING_ATTRS]]
 // SIZE-OPT-SAME: [[SPEED_ATTRS:#[0-9]+]]
-// NO-OPT: ret i32 %1
+// NO-OPT: ret i32 8
 // SIZE-OPT: ret i32 8
 // SPEED-OPT: ret i32 8
 #[optimize(speed)]

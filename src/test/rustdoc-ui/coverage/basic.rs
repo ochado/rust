@@ -1,5 +1,5 @@
 // compile-flags:-Z unstable-options --show-coverage
-// build-pass (FIXME(62277): could be check-pass?)
+// check-pass
 
 #![feature(extern_types)]
 
@@ -45,6 +45,6 @@ macro_rules! some_macro {
     () => {};
 }
 
-extern {
+extern "C" {
     pub type ExternType;
 }

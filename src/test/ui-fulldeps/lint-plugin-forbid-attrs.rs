@@ -3,12 +3,15 @@
 
 #![feature(plugin)]
 #![plugin(lint_plugin_test)]
+//~^ WARN use of deprecated attribute `plugin`
 #![forbid(test_lint)]
 
-fn lintme() { } //~ ERROR item is named 'lintme'
+fn lintme() {} //~ ERROR item is named 'lintme'
 
 #[allow(test_lint)]
-//~^ ERROR allow(test_lint) overruled by outer forbid(test_lint)
+//~^ ERROR allow(test_lint) incompatible
+//~| ERROR allow(test_lint) incompatible
+//~| ERROR allow(test_lint) incompatible
 pub fn main() {
     lintme();
 }

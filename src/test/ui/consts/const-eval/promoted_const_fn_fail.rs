@@ -1,7 +1,8 @@
-#![feature(const_fn, const_fn_union)]
+#![feature(const_fn_union)]
 
 #![allow(const_err)]
 
+#[repr(C)]
 union Bar {
     a: &'static u8,
     b: usize,

@@ -1,10 +1,10 @@
-#![allow(safe_extern_statics, warnings)]
+// revisions: mir thir
+// [thir]compile-flags: -Z thir-unsafeck
 
-extern {
+extern "C" {
     pub static symbol: u32;
 }
 static CRASH: u32 = symbol;
-//~^ ERROR could not evaluate static initializer
-//~| tried to read from foreign (extern) static
+//~^ ERROR use of extern static is unsafe and requires
 
 fn main() {}

@@ -1,6 +1,6 @@
-// build-pass (FIXME(62277): could be check-pass?)
+// check-pass
 
-#![deny(private_doc_tests)]
+#![deny(rustdoc::private_doc_tests)]
 
 mod foo {
     /**

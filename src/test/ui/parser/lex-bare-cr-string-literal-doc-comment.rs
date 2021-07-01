@@ -1,5 +1,3 @@
-// compile-flags: -Z continue-parse-after-error
-
 // ignore-tidy-cr
 
 /// doc comment with bare CR: ''
@@ -24,5 +22,5 @@ fn main() {
     let _s = r"barfoo"; //~ ERROR: bare CR not allowed in raw string
 
     // the following string literal has a bare CR in it
-    let _s = "foo\bar"; //~ ERROR: unknown character escape: \r
+    let _s = "foo\bar"; //~ ERROR: unknown character escape: `\r`
 }

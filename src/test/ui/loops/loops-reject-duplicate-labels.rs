@@ -1,6 +1,5 @@
-// build-pass (FIXME(62277): could be check-pass?)
+// check-pass
 
-// ignore-tidy-linelength
 
 // Issue #21633: reject duplicate loop labels in function bodies.
 // This is testing the exact cases that are in the issue description.

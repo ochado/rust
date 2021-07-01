@@ -5,7 +5,7 @@ struct Error;
 
 #[derive(PartialOrd,PartialEq)]
 struct Struct {
-    x: Error //~ ERROR
+    x: Error //~ ERROR can't compare `Error` with `Error`
 }
 
 fn main() {}

@@ -31,7 +31,7 @@ mkdir "$CACHE_DIR"
 
 # On the beta channel we'll be automatically calculating the prerelease version
 # via the git history, so unshallow our shallow clone from CI.
-if grep -q RUST_RELEASE_CHANNEL=beta src/ci/run.sh; then
+if [ "$(releaseChannel)" = "beta" ]; then
   git fetch origin --unshallow beta master
 fi
 
@@ -47,12 +47,13 @@ function fetch_github_commit_archive {
     rm $cached
 }
 
-included="src/llvm-project src/llvm-emscripten src/doc/book src/doc/rust-by-example"
+included="src/llvm-project src/doc/book src/doc/rust-by-example"
 modules="$(git config --file .gitmodules --get-regexp '\.path$' | cut -d' ' -f2)"
 modules=($modules)
 use_git=""
 urls="$(git config --file .gitmodules --get-regexp '\.url$' | cut -d' ' -f2)"
 urls=($urls)
+# shellcheck disable=SC2068
 for i in ${!modules[@]}; do
     module=${modules[$i]}
     if [[ " $included " = *" $module "* ]]; then

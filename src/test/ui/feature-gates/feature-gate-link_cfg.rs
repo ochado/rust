@@ -1,5 +1,5 @@
 #[link(name = "foo", cfg(foo))]
-//~^ ERROR: is feature gated
-extern {}
+//~^ ERROR: is unstable
+extern "C" {}
 
 fn main() {}

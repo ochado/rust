@@ -1,4 +1,4 @@
-#![deny(private_doc_tests)]
+#![deny(rustdoc::private_doc_tests)]
 
 mod foo {
     /// private doc test
@@ -6,6 +6,6 @@ mod foo {
     /// ```
     /// assert!(false);
     /// ```
-    //~^^^^^ ERROR Documentation test in private item
+    //~^^^^^ ERROR documentation test in private item
     fn bar() {}
 }

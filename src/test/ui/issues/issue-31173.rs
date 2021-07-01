@@ -10,8 +10,8 @@ pub fn get_tok(it: &mut IntoIter<u8>) {
         .cloned()
         //~^ ERROR type mismatch resolving
         //~| expected type `u8`
-        //~| found type `&_`
-        .collect(); //~ ERROR no method named `collect`
+        //~| found reference `&_`
+        .collect(); //~ ERROR the method
 }
 
 fn main() {}

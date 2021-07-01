@@ -46,11 +46,11 @@
 // lldbg-check:[...]$1 = 2
 // lldbr-check:(isize) constant = 2
 // lldb-command:print a_struct
-// lldbg-check:[...]$2 = Struct { a: -3, b: 4.5, c: 5 }
-// lldbr-check:(var_captured_in_stack_closure::Struct) a_struct = Struct { a: -3, b: 4.5, c: 5 }
+// lldbg-check:[...]$2 = { a = -3 b = 4.5 c = 5 }
+// lldbr-check:(var_captured_in_stack_closure::Struct) a_struct = { a = -3 b = 4.5 c = 5 }
 // lldb-command:print *struct_ref
-// lldbg-check:[...]$3 = Struct { a: -3, b: 4.5, c: 5 }
-// lldbr-check:(var_captured_in_stack_closure::Struct) *struct_ref = Struct { a: -3, b: 4.5, c: 5 }
+// lldbg-check:[...]$3 = { a = -3 b = 4.5 c = 5 }
+// lldbr-check:(var_captured_in_stack_closure::Struct) *struct_ref = { a = -3 b = 4.5 c = 5 }
 // lldb-command:print *owned
 // lldbg-check:[...]$4 = 6
 // lldbr-check:(isize) *owned = 6
@@ -64,14 +64,56 @@
 // lldbg-check:[...]$6 = 2
 // lldbr-check:(isize) constant = 2
 // lldb-command:print a_struct
-// lldbg-check:[...]$7 = Struct { a: -3, b: 4.5, c: 5 }
-// lldbr-check:(var_captured_in_stack_closure::Struct) a_struct = Struct { a: -3, b: 4.5, c: 5 }
+// lldbg-check:[...]$7 = { a = -3 b = 4.5 c = 5 }
+// lldbr-check:(var_captured_in_stack_closure::Struct) a_struct = { a = -3 b = 4.5 c = 5 }
 // lldb-command:print *struct_ref
-// lldbg-check:[...]$8 = Struct { a: -3, b: 4.5, c: 5 }
-// lldbr-check:(var_captured_in_stack_closure::Struct) *struct_ref = Struct { a: -3, b: 4.5, c: 5 }
+// lldbg-check:[...]$8 = { a = -3 b = 4.5 c = 5 }
+// lldbr-check:(var_captured_in_stack_closure::Struct) *struct_ref = { a = -3 b = 4.5 c = 5 }
 // lldb-command:print *owned
 // lldbg-check:[...]$9 = 6
 // lldbr-check:(isize) *owned = 6
+
+
+// === CDB TESTS ===================================================================================
+
+// cdb-command: g
+
+// cdb-command: dx variable
+// cdb-check:variable         : 1 [Type: [...]]
+// cdb-command: dx constant
+// cdb-check:constant         : 2 [Type: [...]]
+// cdb-command: dx a_struct
+// cdb-check:a_struct         [Type: var_captured_in_stack_closure::Struct]
+// cdb-check:    [+0x[...]] a                : -3 [Type: [...]]
+// cdb-check:    [+0x[...]] b                : 4.500000 [Type: [...]]
+// cdb-check:    [+0x[...]] c                : 0x5 [Type: unsigned [...]]
+// cdb-command: dx struct_ref
+// cdb-check:struct_ref       : 0x[...] [Type: var_captured_in_stack_closure::Struct *]
+// cdb-check:    [+0x[...]] a                : -3 [Type: [...]]
+// cdb-check:    [+0x[...]] b                : 4.500000 [Type: [...]]
+// cdb-check:    [+0x[...]] c                : 0x5 [Type: unsigned [...]]
+// cdb-command: dx owned
+// cdb-check:owned            : 0x[...] : 6 [Type: [...] *]
+
+
+// cdb-command: g
+
+// cdb-command: dx variable
+// cdb-check:variable         : 2 [Type: [...]]
+// cdb-command: dx constant
+// cdb-check:constant         : 2 [Type: [...]]
+// cdb-command: dx a_struct
+// cdb-check:a_struct         [Type: var_captured_in_stack_closure::Struct]
+// cdb-check:    [+0x[...]] a                : -3 [Type: [...]]
+// cdb-check:    [+0x[...]] b                : 4.500000 [Type: [...]]
+// cdb-check:    [+0x[...]] c                : 0x5 [Type: unsigned [...]]
+// cdb-command: dx struct_ref
+// cdb-check:struct_ref       : 0x[...] [Type: var_captured_in_stack_closure::Struct *]
+// cdb-check:    [+0x[...]] a                : -3 [Type: [...]]
+// cdb-check:    [+0x[...]] b                : 4.500000 [Type: [...]]
+// cdb-check:    [+0x[...]] c                : 0x5 [Type: unsigned [...]]
+// cdb-command: dx owned
+// cdb-check:owned            : 0x[...] : 6 [Type: [...] *]
 
 #![feature(box_syntax)]
 #![allow(unused_variables)]

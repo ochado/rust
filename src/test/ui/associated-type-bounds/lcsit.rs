@@ -2,7 +2,7 @@
 
 #![feature(associated_type_bounds)]
 #![feature(impl_trait_in_bindings)]
-
+//~^ WARNING `impl_trait_in_bindings` is incomplete
 #![allow(non_upper_case_globals)]
 
 use std::ops::Add;
@@ -39,7 +39,7 @@ const cdef_et3: impl Tr1<As1: Clone + Iterator<Item: Add<u8, Output: Into<u8>>>>
     impl Tr1 for A {
         type As1 = core::ops::Range<u8>;
         fn mk(&self) -> Self::As1 { 0..10 }
-    };
+    }
     let x: impl Tr1<As1: Clone + Iterator<Item: Add<u8, Output: Into<u8>>>> = A;
     x
 };

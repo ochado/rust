@@ -2,7 +2,7 @@
 // edition:2015
 // run-rustfix
 // rustfix-only-machine-applicable
-// build-pass (FIXME(62277): could be check-pass?)
+// check-pass
 
 #![feature(rust_2018_preview)]
 #![warn(rust_2018_compatibility)]
@@ -14,12 +14,8 @@ pub struct Foo;
 mod test {
     use crate::foo::foo;
 
-    #[foo] //~ WARN: absolute paths must start with
-    //~| WARN: previously accepted
-    //~| WARN: absolute paths
-    //~| WARN: previously accepted
-    fn main() {
-    }
+    #[foo]
+    fn main() {}
 }
 
 fn main() {

@@ -3,5 +3,6 @@
 #![feature(try_blocks)]
 
 fn main() {
-    while try { false } {} //~ ERROR expected expression, found reserved keyword `try`
+    while try { false } {}
+    //~^ ERROR a `try` block must
 }

@@ -1,5 +1,5 @@
-extern { //~ ERROR missing `fn`, `type`, or `static` for extern-item declaration
-    f();
+extern "C" {
+    f(); //~ ERROR expected one of `!` or `::`, found `(`
 }
 
 fn main() {

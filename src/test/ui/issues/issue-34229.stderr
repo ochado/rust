@@ -4,8 +4,9 @@ error[E0277]: can't compare `Comparable` with `Comparable`
 LL | #[derive(PartialEq, PartialOrd)] struct Nope(Comparable);
    |                                              ^^^^^^^^^^ no implementation for `Comparable < Comparable` and `Comparable > Comparable`
    |
-   = help: the trait `std::cmp::PartialOrd` is not implemented for `Comparable`
+   = help: the trait `PartialOrd` is not implemented for `Comparable`
    = note: required by `std::cmp::PartialOrd::partial_cmp`
+   = note: this error originates in the derive macro `PartialOrd` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: aborting due to previous error
 

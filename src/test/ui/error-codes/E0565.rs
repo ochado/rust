@@ -1,5 +1,5 @@
 // repr currently doesn't support literals
 #[repr("C")] //~ ERROR E0565
-struct A {  }
+struct A {}
 
-fn main() {  }
+fn main() {}

@@ -3,7 +3,7 @@
 //
 // Rule OutlivesNominalType from RFC 1214.
 
-// build-pass (FIXME(62277): could be check-pass?)
+// check-pass
 
 #![feature(rustc_attrs)]
 #![allow(dead_code)]
@@ -13,7 +13,7 @@ mod rev_variant_struct_type {
         x: fn(T)
     }
     struct Bar<'a,'b> {
-        f: &'a Foo<&'b i32> //~ ERROR reference has a longer lifetime
+        f: &'a Foo<&'b i32>
     }
 }
 

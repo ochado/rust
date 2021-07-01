@@ -57,30 +57,13 @@ release: 1.17.0
 LLVM version: 3.9
 ```
 
-## `-r`/`--input-format`: input format
-
-This flag is currently ignored; the idea is that `rustdoc` would support various
-input formats, and you could specify them via this flag.
-
-Rustdoc only supports Rust source code and Markdown input formats. If the
-file ends in `.md` or `.markdown`, `rustdoc` treats it as a Markdown file.
-Otherwise, it assumes that the input file is Rust.
-
-
-## `-w`/`--output-format`: output format
-
-This flag is currently ignored; the idea is that `rustdoc` would support
-various output formats, and you could specify them via this flag.
-
-Rustdoc only supports HTML output, and so this flag is redundant today.
-
 ## `-o`/`--output`: output path
 
 Using this flag looks like this:
 
 ```bash
-$ rustdoc src/lib.rs -o target\\doc
-$ rustdoc src/lib.rs --output target\\doc
+$ rustdoc src/lib.rs -o target/doc
+$ rustdoc src/lib.rs --output target/doc
 ```
 
 By default, `rustdoc`'s output appears in a directory named `doc` in
@@ -99,6 +82,25 @@ $ rustdoc src/lib.rs --crate-name mycrate
 By default, `rustdoc` assumes that the name of your crate is the same name
 as the `.rs` file. `--crate-name` lets you override this assumption with
 whatever name you choose.
+
+## `--document-private-items`: Show items that are not public
+
+Using this flag looks like this:
+
+```bash
+$ rustdoc src/lib.rs --document-private-items
+```
+
+By default, `rustdoc` only documents items that are publicly reachable.
+
+```rust
+pub fn public() {} // this item is public and will documented
+mod private { // this item is private and will not be documented
+    pub fn unreachable() {} // this item is public, but unreachable, so it will not be documented
+}
+```
+
+`--document-private-items` documents all items, even if they're not public.
 
 ## `-L`/`--library-path`: where to look for dependencies
 
@@ -166,38 +168,6 @@ affect that.
 The arguments to this flag are the same as those for the `-C` flag on rustc. Run `rustc -C help` to
 get the full list.
 
-## `--passes`: add more rustdoc passes
-
-Using this flag looks like this:
-
-```bash
-$ rustdoc --passes list
-$ rustdoc src/lib.rs --passes strip-priv-imports
-```
-
-An argument of "list" will print a list of possible "rustdoc passes", and other
-arguments will be the name of which passes to run in addition to the defaults.
-
-For more details on passes, see [the chapter on them](passes.md).
-
-See also `--no-defaults`.
-
-## `--no-defaults`: don't run default passes
-
-Using this flag looks like this:
-
-```bash
-$ rustdoc src/lib.rs --no-defaults
-```
-
-By default, `rustdoc` will run several passes over your code. This
-removes those defaults, allowing you to use `--passes` to specify
-exactly which passes you want.
-
-For more details on passes, see [the chapter on them](passes.md).
-
-See also `--passes`.
-
 ## `--test`: run code examples as tests
 
 Using this flag looks like this:
@@ -236,6 +206,26 @@ Similar to the `--target` flag for `rustc`, this generates documentation
 for a target triple that's different than your host triple.
 
 All of the usual caveats of cross-compiling code apply.
+
+## `--default-theme`: set the default theme
+
+Using this flag looks like this:
+
+```bash
+$ rustdoc src/lib.rs --default-theme=ayu
+```
+
+Sets the default theme (for users whose browser has not remembered a
+previous theme selection from the on-page theme picker).
+
+The supplied value should be the lowercase version of the theme name.
+The set of available themes can be seen in the theme picker in the
+generated output.
+
+Note that the set of available themes - and their appearance - is not
+necessarily stable from one rustdoc version to the next.  If the
+requested theme does not exist, the builtin default (currently
+`light`) is used instead.
 
 ## `--markdown-css`: include more CSS files when rendering markdown
 
@@ -355,7 +345,75 @@ $ rustdoc src/lib.rs --edition 2018
 $ rustdoc --test src/lib.rs --edition 2018
 ```
 
-This flag allows rustdoc to treat your rust code as the given edition. It will compile doctests with
+This flag allows `rustdoc` to treat your rust code as the given edition. It will compile doctests with
 the given edition as well. As with `rustc`, the default edition that `rustdoc` will use is `2015`
 (the first edition).
 
+## `--theme`: add a theme to the documentation output
+
+Using this flag looks like this:
+
+```bash
+$ rustdoc src/lib.rs --theme /path/to/your/custom-theme.css
+```
+
+`rustdoc`'s default output includes two themes: `light` (the default) and
+`dark`. This flag allows you to add custom themes to the output. Giving a CSS
+file to this flag adds it to your documentation as an additional theme choice.
+The theme's name is determined by its filename; a theme file named
+`custom-theme.css` will add a theme named `custom-theme` to the documentation.
+
+## `--check-theme`: verify custom themes against the default theme
+
+Using this flag looks like this:
+
+```bash
+$ rustdoc --check-theme /path/to/your/custom-theme.css
+```
+
+While `rustdoc`'s HTML output is more-or-less consistent between versions, there
+is no guarantee that a theme file will have the same effect. The `--theme` flag
+will still allow you to add the theme to your documentation, but to ensure that
+your theme works as expected, you can use this flag to verify that it implements
+the same CSS rules as the official `light` theme.
+
+`--check-theme` is a separate mode in `rustdoc`. When `rustdoc` sees the
+`--check-theme` flag, it discards all other flags and only performs the CSS rule
+comparison operation.
+
+### `--crate-version`: control the crate version
+
+Using this flag looks like this:
+
+```bash
+$ rustdoc src/lib.rs --crate-version 1.3.37
+```
+
+When `rustdoc` receives this flag, it will print an extra "Version (version)" into the sidebar of
+the crate root's docs. You can use this flag to differentiate between different versions of your
+library's documentation.
+
+## `@path`: load command-line flags from a path
+
+If you specify `@path` on the command-line, then it will open `path` and read
+command line options from it. These options are one per line; a blank line indicates
+an empty option. The file can use Unix or Windows style line endings, and must be
+encoded as UTF-8.
+
+## `--passes`: add more rustdoc passes
+
+This flag is **deprecated**.
+For more details on passes, see [the chapter on them](passes.md).
+
+## `--no-defaults`: don't run default passes
+
+This flag is **deprecated**.
+For more details on passes, see [the chapter on them](passes.md).
+
+## `-r`/`--input-format`: input format
+
+This flag is **deprecated** and **has no effect**.
+
+Rustdoc only supports Rust source code and Markdown input formats. If the
+file ends in `.md` or `.markdown`, `rustdoc` treats it as a Markdown file.
+Otherwise, it assumes that the input file is Rust.

@@ -1,5 +1,3 @@
-// ignore-tidy-linelength
-
 // compile-flags:-g
 
 // Some versions of the non-rust-enabled LLDB print the wrong generic
@@ -67,8 +65,8 @@
 
 // STACK BY REF
 // lldb-command:print *self
-// lldbg-check:[...]$0 = Struct<(u32, i32)> { x: (8888, -8888) }
-// lldbr-check:(generic_method_on_generic_struct::Struct<(u32, i32)>) *self = { x = { = 8888 = -8888 } }
+// lldbg-check:[...]$0 = { x = { 0 = 8888, 1 = -8888 } }
+// lldbr-check:(generic_method_on_generic_struct::Struct<(u32, i32)>) *self = { x = { 0 = 8888 1 = -8888 } }
 // lldb-command:print arg1
 // lldbg-check:[...]$1 = -1
 // lldbr-check:(isize) arg1 = -1
@@ -79,8 +77,8 @@
 
 // STACK BY VAL
 // lldb-command:print self
-// lldbg-check:[...]$3 = Struct<(u32, i32)> { x: (8888, -8888) }
-// lldbr-check:(generic_method_on_generic_struct::Struct<(u32, i32)>) self = { x = { = 8888 = -8888 } }
+// lldbg-check:[...]$3 = { x = { 0 = 8888, 1 = -8888 } }
+// lldbr-check:(generic_method_on_generic_struct::Struct<(u32, i32)>) self = { x = { 0 = 8888, 1 = -8888 } }
 // lldb-command:print arg1
 // lldbg-check:[...]$4 = -3
 // lldbr-check:(isize) arg1 = -3
@@ -91,8 +89,8 @@
 
 // OWNED BY REF
 // lldb-command:print *self
-// lldbg-check:[...]$6 = Struct<f64> { x: 1234.5 }
-// lldbr-check:(generic_method_on_generic_struct::Struct<f64>) *self = Struct<f64> { x: 1234.5 }
+// lldbg-check:[...]$6 = { x = 1234.5 }
+// lldbr-check:(generic_method_on_generic_struct::Struct<f64>) *self = { x = 1234.5 }
 // lldb-command:print arg1
 // lldbg-check:[...]$7 = -5
 // lldbr-check:(isize) arg1 = -5
@@ -103,8 +101,8 @@
 
 // OWNED BY VAL
 // lldb-command:print self
-// lldbg-check:[...]$9 = Struct<f64> { x: 1234.5 }
-// lldbr-check:(generic_method_on_generic_struct::Struct<f64>) self = Struct<f64> { x: 1234.5 }
+// lldbg-check:[...]$9 = { x = 1234.5 }
+// lldbr-check:(generic_method_on_generic_struct::Struct<f64>) self = { x = 1234.5 }
 // lldb-command:print arg1
 // lldbg-check:[...]$10 = -7
 // lldbr-check:(isize) arg1 = -7
@@ -115,8 +113,8 @@
 
 // OWNED MOVED
 // lldb-command:print *self
-// lldbg-check:[...]$12 = Struct<f64> { x: 1234.5 }
-// lldbr-check:(generic_method_on_generic_struct::Struct<f64>) *self = Struct<f64> { x: 1234.5 }
+// lldbg-check:[...]$12 = { x = 1234.5 }
+// lldbr-check:(generic_method_on_generic_struct::Struct<f64>) *self = { x = 1234.5 }
 // lldb-command:print arg1
 // lldbg-check:[...]$13 = -9
 // lldbr-check:(isize) arg1 = -9
